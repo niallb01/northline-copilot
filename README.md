@@ -4,7 +4,7 @@ Support agents at Northline (a fictional B2B SaaS company) investigate billing d
 
 **Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
 
-**Progress:** **M01–M05 done** → next is **M06** (read `getAccount` and `listCharges` from Postgres).
+**Progress:** **M01–M06 done** → next is **M07** (one Postgres transaction that calls `requestRefund`, then inserts a pending row).
 
 ## Local Supabase (M02)
 
@@ -16,6 +16,18 @@ supabase db push    # when a new migration file is ready
 ```
 
 Optional local stack: `supabase start` / `supabase stop` (requires Docker). This repo uses the linked cloud project for day-to-day schema work.
+
+## M06 — read an account (done)
+
+`lib/supabase.ts` is a server-only client. It reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment (copy `.env.example` to `.env`). That key bypasses row level security. It is not a publishable key, and neither name may start with `NEXT_PUBLIC_`. The migration for this step grants `service_role` `SELECT` on `accounts` and `charges` only.
+
+`getAccount` and `listCharges` in `lib/accounts.ts` return the shapes in `lib/types.ts` (`charge_id` becomes `chargeId`, `customer_name` becomes `customerName`, `date` stays a `YYYY-MM-DD` string). They do not insert pending refunds.
+
+```bash
+npm run print:acct-double
+```
+
+That prints `ch_double_1` and `ch_double_dup` for `acct-double`.
 
 ## M01 — refund rules (done)
 

@@ -90,8 +90,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M03 | **Done** |
 | M04 | **Done** |
 | M05 | **Done** |
-| M06 | **Next** |
-| M07–M26 | Not started |
+| M06 | **Done** |
+| M07 | **Next** |
+| M08–M26 | Not started |
 
 ---
 
@@ -179,7 +180,7 @@ npm test
 
 ---
 
-### M06 — Read path: `getAccount` + `listCharges` in `lib/`
+### M06 — Read path: `getAccount` + `listCharges` in `lib/` ✅
 
 **Concept:** A lookup is a function over the database. It does not change pending refunds.
 
@@ -190,6 +191,8 @@ npm test
 **You should understand:** Reads have no refund side effects. The service-role key, when we add it, stays in server env only.
 
 **Not in this step:** OpenAI, UI, the refund write path.
+
+**Done:** `lib/supabase.ts` builds a server-only client from `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. A migration grants `service_role` `SELECT` on `accounts` and `charges`. `getAccount` and `listCharges` in `lib/accounts.ts` return the shapes in `lib/types.ts`. `npm run print:acct-double` prints `ch_double_1` and `ch_double_dup`. No pending row is written.
 
 ---
 
@@ -610,4 +613,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M03”**. M03 is the `accounts` and `charges` tables only. No seed rows, no pending refunds, no app.
+Say **“Start M07”**. M07 is the refund write path: one Postgres transaction that calls `requestRefund`, then inserts a pending row. No chat and no Next.js.
