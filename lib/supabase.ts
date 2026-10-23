@@ -1,9 +1,9 @@
 /**
- * Server-only Supabase client for Northline. It reads SUPABASE_URL and
- * SUPABASE_SERVICE_ROLE_KEY from the server environment. That key is the service-role
- * key: it bypasses row level security and must never be sent to the browser. This file
- * does not use a publishable key and does not insert pending refunds. Do not prefix
- * either variable with NEXT_PUBLIC_.
+ * Connects server-side code to your Supabase project. It reads SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY from the environment and hands back one shared client that
+ * lib/accounts.ts uses for database reads. That key must stay on the server only (never
+ * in the browser and never in a NEXT_PUBLIC_ env var). This file does not run queries
+ * itself and does not queue refunds.
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";

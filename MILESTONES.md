@@ -91,8 +91,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M04 | **Done** |
 | M05 | **Done** |
 | M06 | **Done** |
-| M07 | **Next** |
-| M08–M26 | Not started |
+| M07 | **Done** |
+| M08 | **Next** |
+| M09–M26 | Not started |
 
 ---
 
@@ -224,6 +225,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You should understand:** Two requests cannot both pass the check and both insert. The loser waits on the lock, or hits the unique index, and both end as a clean rejection with a single row.
 
 **Not in this step:** Chat, the confirm button, the audit log.
+
+**Done:** `lib/postgres.ts` checks out one session-mode connection from `DATABASE_URL` (port 5432). `queueRefund` in `lib/refunds.ts` locks the charge, loads the account, charges, and pending rows, calls `requestRefund`, and inserts one pending row only on accept. A unique-index violation comes back as already pending. `npm run queue:refund-cases` runs the four cases on 2026-10-22. No chat and no Next.js.
 
 ---
 
@@ -613,4 +616,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M07”**. M07 is the refund write path: one Postgres transaction that calls `requestRefund`, then inserts a pending row. No chat and no Next.js.
+Say **“Start M08”**. M08 is persistence checks against the database, including two overlapping requests for the same eligible charge. No Next.js.

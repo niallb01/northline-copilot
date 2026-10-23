@@ -1,6 +1,8 @@
 /**
- * Reads acct-double from Postgres and prints its charge ids, one per line.
- * This checks the read path only. It does not call the refund rules or write a pending row.
+ * A small manual check for M06. It loads the demo account acct-double from Postgres,
+ * checks the data matches lib/seed.ts, and prints each charge id on its own line. Run it
+ * with npm run print:acct-double (you need a .env with Supabase server credentials). It
+ * does not call requestRefund and does not add rows to pending_refunds.
  */
 
 import { getAccount, listCharges } from "../lib/accounts";

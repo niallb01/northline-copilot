@@ -1,8 +1,9 @@
 /**
- * Reads one Northline account and its charges from Postgres and returns the same shapes
- * as lib/types.ts. Column names such as charge_id and customer_name are mapped to
- * chargeId and customerName. These functions only read. They do not apply refund rules
- * and they do not insert pending refunds.
+ * Loads Northline customers from the database for the server. Call getAccount with an
+ * account id to get that customer’s plan, name, and every charge on the account, or null
+ * if the id does not exist. Call listCharges when you only need the charge lines for one
+ * account. Results use the same field names as lib/types.ts (for example chargeId, not
+ * charge_id). Nothing here starts a refund or writes to pending_refunds.
  */
 
 import { getServerSupabase } from "./supabase";

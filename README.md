@@ -4,7 +4,7 @@ Support agents at Northline (a fictional B2B SaaS company) investigate billing d
 
 **Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
 
-**Progress:** **M01–M06 done** → next is **M07** (one Postgres transaction that calls `requestRefund`, then inserts a pending row).
+**Progress:** **M01–M07 done** → next is **M08** (persistence checks, including two overlapping requests for the same eligible charge).
 
 ## Local Supabase (M02)
 
@@ -28,6 +28,16 @@ npm run print:acct-double
 ```
 
 That prints `ch_double_1` and `ch_double_dup` for `acct-double`.
+
+## M07 — queue a refund in one transaction (done)
+
+`queueRefund` in `lib/refunds.ts` uses `DATABASE_URL` (session mode, port 5432), not the Supabase JavaScript client. One connection locks the charge row, loads the account, its charges, and pending rows, then calls `requestRefund`. It inserts one `pending_refunds` row only when that function accepts. The 30-day and 14-day windows stay in `lib/refundRules.ts`. If the unique index rejects a second pending row for the same charge, the result is already pending and the table does not gain a row.
+
+```bash
+npm run queue:refund-cases
+```
+
+That runs four calls on the story date **2026-10-22**, one at a time: `acct-annual-ok` / `ch_annual_1` pending, `acct-monthly-late` / `ch_monthly_1` rejected, `acct-double` / `ch_double_dup` pending, then the same annual charge rejected with one row still there. The script clears pending rows for those three charges first so you can run it again, and it leaves the two accepted rows in the table.
 
 ## M01 — refund rules (done)
 

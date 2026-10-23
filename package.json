@@ -6,16 +6,19 @@
   "type": "module",
   "scripts": {
     "test": "tsx --test lib/refundRules.test.ts",
-    "print:acct-double": "node --env-file=.env --import tsx scripts/print-acct-double.ts"
+    "print:acct-double": "node --env-file=.env --import tsx scripts/print-acct-double.ts",
+    "queue:refund-cases": "node --env-file=.env --import tsx scripts/queue-refund-cases.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.12",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
+    "pg": "^8.23.1",
     "ws": "^8.22.0"
   }
 }
