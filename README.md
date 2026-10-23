@@ -1,69 +1,73 @@
-# northline-copilot
+# Northline Copilot
 
-Support agents at Northline (a fictional B2B SaaS company) investigate billing disputes. This app will help an agent look up an account, read the refund policy, and queue a refund for a person to review. It does not pay anyone. All customer data is synthetic.
+A support workspace for **Northline**, a fictional B2B SaaS company. An agent investigates billing disputes: look up the customer, read refund policy, and—when the rules allow—**queue a refund for a human to review**. This project **never sends money**. `pending` means “waiting for a person”; `rejected` means nothing was saved. All accounts and charges are **synthetic demo data**.
 
-**Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
+## What you are building
 
-**Progress:** **M01–M07 done** → next is **M08** (persistence checks, including two overlapping requests for the same eligible charge).
+The end product is a **two-panel web app**: chat on the left, account/charges/policy/pending context on the right. An **LLM helps investigate** (look up data, search policy, explain). **TypeScript in `lib/` decides refunds**—not the model, not SQL, not copy-pasted policy text. A **human confirms** before a pending row is written. The same rules and tools will also run from an **MCP server** in Cursor later.
 
-## Local Supabase (M02)
+**Stack (planned):** Next.js, Supabase Postgres, pgvector for policy snippets, OpenAI on the server only, one shared tool layer, MCP stdio, deploy on Vercel + Supabase.
 
-Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`. M04 seeded `acct-annual-ok`, `acct-monthly-late`, and `acct-double` plus their charges. M05 added an empty `pending_refunds` table. A partial unique index on `(account_id, charge_id)` where `status` is `pending` stops two pending rows for the same charge.
+## How refunds are supposed to work
+
+1. **Read** account and charges from Postgres.
+2. **Decide** with `requestRefund` in `lib/refundRules.ts` (annual ≤ 30 days, monthly ≤ 14 days, duplicate charge on same invoice, no second pending for the same charge).
+3. **Write** only when eligible: `queueRefund` in `lib/refunds.ts` runs one Postgres transaction, calls those rules, and inserts **at most one** row into `pending_refunds`. The database also blocks two pending rows for the same charge via a unique index.
+
+The model may *suggest* or *preview*; it must not be the source of truth for eligibility or payment.
+
+## What exists in the repo today
+
+There is **no website or chat UI yet** (that starts at M09). What you have now is the **shared brain** and database:
+
+| Piece | Role |
+| --- | --- |
+| `lib/refundRules.ts` | Refund eligibility (unit-tested, in-memory). |
+| `lib/accounts.ts` + `lib/supabase.ts` | Read accounts/charges via Supabase (server key). |
+| `lib/postgres.ts` + `lib/refunds.ts` | Write path: direct Postgres session + `queueRefund`. |
+| `supabase/migrations/` | `accounts`, `charges`, `pending_refunds`, seed data, grants. |
+| `scripts/` | Manual checks against your linked Supabase project. |
+
+**Progress:** M01–M07 done → next is **M08** (integration tests, including two overlapping refund requests). Step-by-step plan: **[MILESTONES.md](./MILESTONES.md)**.
+
+## Demo accounts (seed)
+
+Three fixed stories; dates make sense when “today” is **2026-10-22**:
+
+| Account | Story |
+| --- | --- |
+| `acct-annual-ok` | Annual charge inside the 30-day window → can queue pending. |
+| `acct-monthly-late` | Monthly charge too old → reject, no row. |
+| `acct-double` | Two successful charges on one invoice → the duplicate can queue pending. |
+
+Refund window table and charge-level outcomes are in **M01** in [MILESTONES.md](./MILESTONES.md) and in `lib/refundRules.test.ts`.
+
+## Local setup
+
+1. `npm install`
+2. Copy `.env.example` → `.env` and fill in (server only—**never** `NEXT_PUBLIC_`):
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — reads through the Supabase API.
+   - `DATABASE_URL` — **session** pooler on **port 5432** (not 6543) for refund writes. Percent-encode special characters in the password.
+
+Linked Supabase project ref is in the repo workflow docs; schema is applied with:
 
 ```bash
 supabase migration list --linked
 supabase db push    # when a new migration file is ready
 ```
 
-Optional local stack: `supabase start` / `supabase stop` (requires Docker). This repo uses the linked cloud project for day-to-day schema work.
+Optional local Postgres via Docker: `supabase start` / `supabase stop`. Day-to-day work in this repo uses the **hosted** linked project.
 
-## M06 — read an account (done)
-
-`lib/supabase.ts` is a server-only client. It reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment (copy `.env.example` to `.env`). That key bypasses row level security. It is not a publishable key, and neither name may start with `NEXT_PUBLIC_`. The migration for this step grants `service_role` `SELECT` on `accounts` and `charges` only.
-
-`getAccount` and `listCharges` in `lib/accounts.ts` return the shapes in `lib/types.ts` (`charge_id` becomes `chargeId`, `customer_name` becomes `customerName`, `date` stays a `YYYY-MM-DD` string). They do not insert pending refunds.
+## Commands
 
 ```bash
-npm run print:acct-double
+npm test                      # refund rules (no database)
+npm run print:acct-double     # read acct-double from Postgres
+npm run queue:refund-cases    # four M07 write-path checks on 2026-10-22
 ```
 
-That prints `ch_double_1` and `ch_double_dup` for `acct-double`.
+After `queue:refund-cases`, expect **two** pending rows in Supabase (`ch_annual_1`, `ch_double_dup`) until you clear or re-run the script (it resets pending for those charges first).
 
-## M07 — queue a refund in one transaction (done)
+## Project layout (short)
 
-`queueRefund` in `lib/refunds.ts` uses `DATABASE_URL` (session mode, port 5432), not the Supabase JavaScript client. One connection locks the charge row, loads the account, its charges, and pending rows, then calls `requestRefund`. It inserts one `pending_refunds` row only when that function accepts. The 30-day and 14-day windows stay in `lib/refundRules.ts`. If the unique index rejects a second pending row for the same charge, the result is already pending and the table does not gain a row.
-
-```bash
-npm run queue:refund-cases
-```
-
-That runs four calls on the story date **2026-10-22**, one at a time: `acct-annual-ok` / `ch_annual_1` pending, `acct-monthly-late` / `ch_monthly_1` rejected, `acct-double` / `ch_double_dup` pending, then the same annual charge rejected with one row still there. The script clears pending rows for those three charges first so you can run it again, and it leaves the two accepted rows in the table.
-
-## M01 — refund rules (done)
-
-Only the decision exists. There is no website, database, model, or MCP server yet.
-
-`lib/refundRules.ts` is a port of `northline-desk/refundRules.js`. The same windows:
-
-| Situation | Result |
-| --- | --- |
-| Annual charge 30 days old or newer | One `pending` row |
-| Monthly charge 14 days old or newer | One `pending` row |
-| A later successful charge on the same invoice | One `pending` row, even if the date is old |
-| Anything else | Rejected. Nothing is saved |
-| A second request while that charge is already pending | Rejected. Nothing new is saved |
-
-The three seed accounts in `lib/seed.ts` keep their original meaning. Tests pin today to **2026-10-22**.
-
-| Account | Charge | On that day |
-| --- | --- | --- |
-| `acct-annual-ok` | `ch_annual_1` (2026-10-11) | Pending. 11 days old, inside 30. |
-| `acct-monthly-late` | `ch_monthly_1` (2026-09-11) | Rejected. 41 days old, past 14. No row. |
-| `acct-double` | `ch_double_dup` | Pending. Second success on `in_double_1`. |
-| `acct-double` | `ch_double_1` | Rejected. First charge on that invoice, and it is past 14 days. |
-
-```bash
-npm test
-```
-
-The tests call `requestRefund` directly. They do not call a model.
+Business logic lives in **`lib/`**. **`app/`** and **`components/`** appear when the Next.js shell is added. Integration tests will live under **`tests/integration/`** (M08). Details: **Project layout** in [MILESTONES.md](./MILESTONES.md).
