@@ -2,7 +2,22 @@
 
 Support agents at Northline (a fictional B2B SaaS company) investigate billing disputes. This app will help an agent look up an account, read the refund policy, and queue a refund for a person to review. It does not pay anyone. All customer data is synthetic.
 
-## Milestone 1 — refund rules
+**Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
+
+**Progress:** **M01–M03 done** → next is **M04** (seed the three canonical accounts).
+
+## Local Supabase (M02)
+
+Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`.
+
+```bash
+supabase migration list --linked
+supabase db push    # when a new migration file is ready
+```
+
+Optional local stack: `supabase start` / `supabase stop` (requires Docker). This repo uses the linked cloud project for day-to-day schema work.
+
+## M01 — refund rules (done)
 
 Only the decision exists. There is no website, database, model, or MCP server yet.
 
