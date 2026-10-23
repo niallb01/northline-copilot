@@ -92,8 +92,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M05 | **Done** |
 | M06 | **Done** |
 | M07 | **Done** |
-| M08 | **Next** |
-| M09–M26 | Not started |
+| M08 | **Done** |
+| M09 | **Next** |
+| M10–M26 | Not started |
 
 ---
 
@@ -250,6 +251,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You should understand:** A failure here is a persistence bug. The rule function already passed in M01.
 
 **Not in this step:** Next.js pages. This checkpoint is not the full eval suite (that is M25).
+
+**Done:** `tests/integration/queueRefund.test.ts` calls `queueRefund` on Postgres through `DATABASE_URL` (session mode, port 5432) with today fixed at 2026-10-22. The cases are annual in window, monthly too old, the duplicate charge, an unknown account, a second request while pending, and two overlapping requests for the same eligible charge. Each run deletes pending rows for the charges it touches, then checks the table. `npm run test:integration` runs them. `npm test` still runs only the in-memory rule tests. No Next.js.
 
 ---
 
@@ -616,4 +619,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M08”**. M08 is persistence checks against the database, including two overlapping requests for the same eligible charge. No Next.js.
+Say **“Start M09”**. M09 is a Next.js App Router skeleton: routes under `app/`, `npm run dev`, and a plain home page. No chat and no OpenAI.

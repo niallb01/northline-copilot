@@ -28,7 +28,7 @@ There is **no website or chat UI yet** (that starts at M09). What you have now i
 | `supabase/migrations/` | `accounts`, `charges`, `pending_refunds`, seed data, grants. |
 | `scripts/` | Manual checks against your linked Supabase project. |
 
-**Progress:** M01–M07 done → next is **M08** (integration tests, including two overlapping refund requests). Step-by-step plan: **[MILESTONES.md](./MILESTONES.md)**.
+**Progress:** M01–M08 done → next is **M09** (Next.js App Router skeleton: a plain home page, no chat). Step-by-step plan: **[MILESTONES.md](./MILESTONES.md)**.
 
 ## Demo accounts (seed)
 
@@ -62,12 +62,13 @@ Optional local Postgres via Docker: `supabase start` / `supabase stop`. Day-to-d
 
 ```bash
 npm test                      # refund rules (no database)
+npm run test:integration      # queueRefund against Postgres (needs DATABASE_URL)
 npm run print:acct-double     # read acct-double from Postgres
 npm run queue:refund-cases    # four M07 write-path checks on 2026-10-22
 ```
 
-After `queue:refund-cases`, expect **two** pending rows in Supabase (`ch_annual_1`, `ch_double_dup`) until you clear or re-run the script (it resets pending for those charges first).
+After `queue:refund-cases`, expect **two** pending rows in Supabase (`ch_annual_1`, `ch_double_dup`) until you clear or re-run the script (it resets pending for those charges first). `npm run test:integration` also deletes pending rows for `ch_annual_1`, `ch_monthly_1`, and `ch_double_dup` before and after its cases.
 
 ## Project layout (short)
 
-Business logic lives in **`lib/`**. **`app/`** and **`components/`** appear when the Next.js shell is added. Integration tests will live under **`tests/integration/`** (M08). Details: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic lives in **`lib/`**. **`app/`** and **`components/`** appear when the Next.js shell is added (M09). Integration tests live under **`tests/integration/`**. Details: **Project layout** in [MILESTONES.md](./MILESTONES.md).
