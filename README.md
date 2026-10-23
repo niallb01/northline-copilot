@@ -4,11 +4,11 @@ Support agents at Northline (a fictional B2B SaaS company) investigate billing d
 
 **Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
 
-**Progress:** **M01–M04 done** → next is **M05** (`pending_refunds` and the one-pending-per-charge index).
+**Progress:** **M01–M05 done** → next is **M06** (read `getAccount` and `listCharges` from Postgres).
 
 ## Local Supabase (M02)
 
-Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`. M04 seeded `acct-annual-ok`, `acct-monthly-late`, and `acct-double` plus their charges.
+Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`. M04 seeded `acct-annual-ok`, `acct-monthly-late`, and `acct-double` plus their charges. M05 added an empty `pending_refunds` table. A partial unique index on `(account_id, charge_id)` where `status` is `pending` stops two pending rows for the same charge.
 
 ```bash
 supabase migration list --linked
