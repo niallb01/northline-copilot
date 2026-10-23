@@ -18,7 +18,7 @@ The model may propose or preview outcomes; it is not the authority on eligibilit
 
 ## Implementation status
 
-The **domain layer and database layer** are in place; the **web UI is not** (Next.js shell begins at milestone M09). Present capabilities:
+The **domain layer, database layer, and Next.js app shell** are in place. The workspace UI is not (the two-column layout begins at milestone M10). Present capabilities:
 
 | Component | Responsibility |
 | --- | --- |
@@ -28,8 +28,9 @@ The **domain layer and database layer** are in place; the **web UI is not** (Nex
 | `supabase/migrations/` | Schema, seed data, grants. |
 | `tests/integration/` | Persistence and concurrency checks against Postgres. |
 | `scripts/` | Manual verification against a linked Supabase project. |
+| `app/` | Next.js App Router shell: root layout and a plain home page. |
 
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M08 complete; M09 next).
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M09 complete; M10 next).
 
 ## Demo accounts (seed)
 
@@ -62,6 +63,7 @@ Optional local Postgres: `supabase start` / `supabase stop`. Development in this
 ## Commands
 
 ```bash
+npm run dev                   # local Next.js app (plain home page)
 npm test                      # refund rules (no database)
 npm run test:integration      # queueRefund against Postgres (requires DATABASE_URL)
 npm run print:acct-double     # read acct-double from Postgres
@@ -72,4 +74,4 @@ npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
 
 ## Project layout
 
-Business logic resides in **`lib/`**. **`app/`** and **`components/`** are introduced with the Next.js shell (M09). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic resides in **`lib/`**. **`app/`** is the Next.js shell (M09): a root layout and a plain home page. **`components/`** arrives with the workspace layout (M10). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).

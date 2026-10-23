@@ -5,6 +5,9 @@
   "description": "Support workspace that investigates a Northline billing dispute and can queue a refund for human review. It does not pay anyone.",
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "test": "tsx --test lib/refundRules.test.ts",
     "test:integration": "node --env-file=.env --import tsx --test tests/integration/queueRefund.test.ts",
     "print:acct-double": "node --env-file=.env --import tsx scripts/print-acct-double.ts",
@@ -13,13 +16,18 @@
   "devDependencies": {
     "@types/node": "^22.18.12",
     "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
+    "next": "^16.4.3",
     "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "ws": "^8.22.0"
   }
 }

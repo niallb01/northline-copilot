@@ -1,0 +1,21 @@
+/**
+ * Root layout for the Northline Copilot web app. It supplies the HTML shell and
+ * the document title for every route. It does not load accounts, render chat,
+ * or call the refund queue.
+ */
+
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  title: "Northline Copilot",
+  description: "Billing support workspace. Refunds are queued for human review.",
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}

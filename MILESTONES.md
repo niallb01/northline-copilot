@@ -56,7 +56,8 @@ tests/
 | `supabase/` | M02 (exists) |
 | `supabase/migrations/` | M03 |
 | `tests/integration/` | M08 |
-| `app/`, `components/` | M09 (M10b adds login routes/components as needed) |
+| `app/` | M09 |
+| `components/` | M10 (M10b adds the login form as needed) |
 | `tests/evals/` | M16a checkpoint file, expanded in M25 |
 | `mcp/` | M23 |
 
@@ -258,7 +259,7 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 ## Phase C — Workspace shell (still no model)
 
-### M09 — Next.js App Router skeleton
+### M09 — Next.js App Router skeleton ✅
 
 **Concept:** Routes live under `app/`. This repo is now a web app plus `lib/`.
 
@@ -267,6 +268,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You run:** The home page loads locally.
 
 **Not in this step:** Chat, OpenAI, Vercel.
+
+**Done:** Next.js (App Router) and React are installed. `app/layout.tsx` is the document shell and `app/page.tsx` is a plain home page. `npm run dev` serves that page locally. No chat, no OpenAI, and no route that reads or writes refunds. Business logic stays in `lib/`.
 
 ---
 
@@ -619,4 +622,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M09”**. M09 is a Next.js App Router skeleton: routes under `app/`, `npm run dev`, and a plain home page. No chat and no OpenAI.
+Say **“Start M10”**. M10 is the two-column workspace: empty labeled panels for Chat, Account, Charges, Policy citations, and Pending queue. No live data and no model.
