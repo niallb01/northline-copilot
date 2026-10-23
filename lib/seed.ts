@@ -1,11 +1,12 @@
+/**
+ * The three fictional Northline customers used in tests and (later) the database seed.
+ * Each story is fixed on purpose: one refund should pass, one should fail for being too
+ * old, and one has a duplicate charge on the same invoice. STORY_TODAY is the pretend
+ * calendar date tests use so those stories stay stable. Do not change what these three mean.
+ */
+
 import type { Account } from "./types";
 
-/**
- * The three accounts from northline-desk/accounts.json.
- * Dates are fixed. Tests pin "today" to 2026-10-22 so the windows stay true:
- * annual charge is 11 days old, monthly charge is 41 days old, duplicate is old.
- * Do not change what these three mean. Extra histories for evals come later.
- */
 export const STORY_TODAY = "2026-10-22";
 
 export const seedAccounts: Account[] = [

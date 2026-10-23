@@ -1,3 +1,9 @@
+/**
+ * Checks that requestRefund behaves correctly for the three seed accounts and a few edge
+ * cases (unknown account, second request while already pending). These tests call the
+ * rule code directly with in-memory data—no database, no model, no HTTP.
+ */
+
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { requestRefund } from "./refundRules";

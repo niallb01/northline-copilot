@@ -4,11 +4,11 @@ Support agents at Northline (a fictional B2B SaaS company) investigate billing d
 
 **Build plan:** **[MILESTONES.md](./MILESTONES.md)** — micro-steps M01–M26, with letter suffixes where a step was too big (M10b, M14a–c, M16a–c, M18a–b). One step per session; no skipping. Folder layout and where tests live are in **Project layout** in that file.
 
-**Progress:** **M01–M03 done** → next is **M04** (seed the three canonical accounts).
+**Progress:** **M01–M04 done** → next is **M05** (`pending_refunds` and the one-pending-per-charge index).
 
 ## Local Supabase (M02)
 
-Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`.
+Config lives in `supabase/config.toml`. Hosted project: link with `supabase link --project-ref zszfwicuvbsqtayzaelo`. M03 added empty `accounts` and `charges` tables via `supabase/migrations/`. M04 seeded `acct-annual-ok`, `acct-monthly-late`, and `acct-double` plus their charges.
 
 ```bash
 supabase migration list --linked

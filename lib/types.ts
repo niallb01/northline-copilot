@@ -1,3 +1,9 @@
+/**
+ * Shared shapes for Northline demo data: what an account, a charge, a queued refund,
+ * and a refund decision look like in TypeScript. This file does not read a database or
+ * call OpenAI; it only describes the fields the rest of lib/ agrees on.
+ */
+
 export type Plan = "annual" | "monthly";
 
 export type ChargeStatus = "succeeded" | "failed" | "refunded";

@@ -1,8 +1,17 @@
+/**
+ * Decides whether a refund request may be queued for human review. It applies Northline’s
+ * fixed rules (annual/monthly windows and duplicate charges on the same invoice). On accept
+ * it appends one pending entry to the list you pass in; on reject it changes nothing. This
+ * never pays money—that happens only outside this app, if ever.
+ */
+
 import type { Account, PendingRefund, RefundResult } from "./types";
 
+// PSEUDO: annual refunds allowed within 30 days; monthly within 14 days
 const ANNUAL_WINDOW_DAYS = 30;
 const MONTHLY_WINDOW_DAYS = 14;
 
+// PSEUDO: everything requestRefund needs — ids, account list, pending list, optional "today"
 export type RequestRefundInput = {
   accountId: string;
   chargeId: string;
@@ -13,6 +22,7 @@ export type RequestRefundInput = {
   now?: Date;
 };
 
+// PSEUDO: return a rejected result object; caller must not append to pending
 function rejected(accountId: string, chargeId: string, reason: string): RefundResult {
   return {
     started: false,
@@ -23,6 +33,7 @@ function rejected(accountId: string, chargeId: string, reason: string): RefundRe
   };
 }
 
+// PSEUDO: chargeDate = YYYY-MM-DD → whole days from that date to today (calendar days)
 function ageInDays(dateString: string, today: Date): number {
   const [year, month, day] = dateString.split("-").map(Number);
   const chargeDate = new Date(year, month - 1, day);
@@ -33,21 +44,26 @@ function ageInDays(dateString: string, today: Date): number {
 
 /** First successful charge on the invoice is the original. Later ones are duplicates. */
 function originalCharge(account: Account, chargeId: string, invoiceId: string) {
+  // PSEUDO: keep only succeeded charges on this invoice
   const successful = account.charges.filter(
     (item) => item.invoiceId === invoiceId && item.status === "succeeded"
   );
 
+  // PSEUDO: fewer than two successes → not a duplicate scenario
   if (successful.length < 2) {
     return null;
   }
 
+  // PSEUDO: if this charge is the first success on the invoice, it is not the duplicate
   if (successful[0].chargeId === chargeId) {
     return null;
   }
 
+  // PSEUDO: otherwise return the first success (the original charge id)
   return successful[0];
 }
 
+// PSEUDO: map plan name → refund window in days, or null if unknown plan
 function windowForPlan(plan: Account["plan"]): number | null {
   if (plan === "annual") {
     return ANNUAL_WINDOW_DAYS;
@@ -70,6 +86,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
   const today = input.today ?? new Date();
   const now = input.now ?? new Date();
 
+  // PSEUDO: if ids are blank → reject
   if (!accountId.trim() || !chargeId.trim()) {
     return rejected(
       accountId,
@@ -78,11 +95,13 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     );
   }
 
+  // PSEUDO: find account by id → if missing, reject
   const account = accounts.find((item) => item.id === accountId);
   if (!account) {
     return rejected(accountId, chargeId, `No account with id "${accountId}".`);
   }
 
+  // PSEUDO: find charge on that account → if missing, reject
   const charge = account.charges.find((item) => item.chargeId === chargeId);
   if (!charge) {
     return rejected(
@@ -92,6 +111,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     );
   }
 
+  // PSEUDO: only succeeded charges can be queued → else reject
   if (charge.status !== "succeeded") {
     return rejected(
       accountId,
@@ -100,6 +120,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     );
   }
 
+  // PSEUDO: if this charge already has a pending row → reject (no second queue)
   const alreadyPending = pending.some(
     (row) =>
       row.accountId === accountId &&
@@ -114,6 +135,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     );
   }
 
+  // PSEUDO: if this charge is a duplicate on the invoice → append pending and accept
   const original = originalCharge(account, charge.chargeId, charge.invoiceId);
   if (original) {
     const reason = `Charge ${charge.chargeId} is a second successful charge on invoice ${charge.invoiceId} (original charge ${original.chargeId}). Refund started as pending for a person to approve. No money has been sent.`;
@@ -138,6 +160,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     };
   }
 
+  // PSEUDO: look up plan window → if plan unknown, reject
   const windowDays = windowForPlan(account.plan);
   if (windowDays === null) {
     return rejected(
@@ -150,6 +173,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
   const age = ageInDays(charge.date, today);
   const planLabel = account.plan === "annual" ? "Annual" : "Monthly";
 
+  // PSEUDO: if charge age ≤ window → append pending and accept
   if (age <= windowDays) {
     const reason = `${planLabel} charge is ${age} days old (within ${windowDays} days). Refund started as pending for a person to approve. No money has been sent.`;
     pending.push({
@@ -173,6 +197,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     };
   }
 
+  // PSEUDO: charge too old for plan window → reject
   return rejected(
     accountId,
     chargeId,

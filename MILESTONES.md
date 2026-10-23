@@ -88,8 +88,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M01 | **Done** |
 | M02 | **Done** |
 | M03 | **Done** |
-| M04 | **Next** |
-| M05–M26 | Not started |
+| M04 | **Done** |
+| M05 | **Next** |
+| M06–M26 | Not started |
 
 ---
 
