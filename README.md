@@ -1,74 +1,75 @@
 # Northline Copilot
 
-A support workspace for **Northline**, a fictional B2B SaaS company. An agent investigates billing disputes: look up the customer, read refund policy, and—when the rules allow—**queue a refund for a human to review**. This project **never sends money**. `pending` means “waiting for a person”; `rejected` means nothing was saved. All accounts and charges are **synthetic demo data**.
+A reference implementation of a **billing support workspace** for Northline, a fictional B2B SaaS company. The application helps operators investigate disputes, retrieve policy context, and **queue refunds for human review**. It does not execute payouts: eligible requests create a `pending` record; ineligible requests are rejected with no database write. All customer and billing data in the repository is **synthetic**.
 
-## What you are building
+## Overview
 
-The end product is a **two-panel web app**: chat on the left, account/charges/policy/pending context on the right. An **LLM helps investigate** (look up data, search policy, explain). **TypeScript in `lib/` decides refunds**—not the model, not SQL, not copy-pasted policy text. A **human confirms** before a pending row is written. The same rules and tools will also run from an **MCP server** in Cursor later.
+Northline Copilot is designed as a **two-panel workspace**: conversational investigation on one side and structured account context (charges, policy citations, pending queue) on the other. A language model assists with lookup and explanation; **refund eligibility is enforced in TypeScript** (`lib/refundRules.ts`), not by the model, SQL, or static prompt text. Writes to the pending queue require explicit human confirmation in the web flow (and equivalent confirmation in the planned MCP interface).
 
-**Stack (planned):** Next.js, Supabase Postgres, pgvector for policy snippets, OpenAI on the server only, one shared tool layer, MCP stdio, deploy on Vercel + Supabase.
+**Target stack:** Next.js (App Router), Supabase Postgres, pgvector for policy retrieval, OpenAI invoked server-side only, a shared tool layer consumed by both the web app and an MCP stdio server, deployed on Vercel and Supabase.
 
-## How refunds are supposed to work
+## Refund workflow
 
-1. **Read** account and charges from Postgres.
-2. **Decide** with `requestRefund` in `lib/refundRules.ts` (annual ≤ 30 days, monthly ≤ 14 days, duplicate charge on same invoice, no second pending for the same charge).
-3. **Write** only when eligible: `queueRefund` in `lib/refunds.ts` runs one Postgres transaction, calls those rules, and inserts **at most one** row into `pending_refunds`. The database also blocks two pending rows for the same charge via a unique index.
+1. **Read** account and charge data from Postgres (Supabase client for reads).
+2. **Evaluate** eligibility via `requestRefund` in `lib/refundRules.ts`: annual plans within 30 days, monthly within 14 days, duplicate successful charges on the same invoice, and rejection when a pending row already exists for the charge.
+3. **Persist** only on accept: `queueRefund` in `lib/refunds.ts` runs a single Postgres transaction (session-mode `DATABASE_URL`), invokes the rules, and inserts at most one row into `pending_refunds`. A partial unique index prevents duplicate pending rows for the same charge.
 
-The model may *suggest* or *preview*; it must not be the source of truth for eligibility or payment.
+The model may propose or preview outcomes; it is not the authority on eligibility or payment.
 
-## What exists in the repo today
+## Implementation status
 
-There is **no website or chat UI yet** (that starts at M09). What you have now is the **shared brain** and database:
+The **domain layer and database layer** are in place; the **web UI is not** (Next.js shell begins at milestone M09). Present capabilities:
 
-| Piece | Role |
+| Component | Responsibility |
 | --- | --- |
 | `lib/refundRules.ts` | Refund eligibility (unit-tested, in-memory). |
-| `lib/accounts.ts` + `lib/supabase.ts` | Read accounts/charges via Supabase (server key). |
-| `lib/postgres.ts` + `lib/refunds.ts` | Write path: direct Postgres session + `queueRefund`. |
-| `supabase/migrations/` | `accounts`, `charges`, `pending_refunds`, seed data, grants. |
-| `scripts/` | Manual checks against your linked Supabase project. |
+| `lib/accounts.ts`, `lib/supabase.ts` | Read path for accounts and charges (service role, server-only). |
+| `lib/postgres.ts`, `lib/refunds.ts` | Write path: transactional `queueRefund`. |
+| `supabase/migrations/` | Schema, seed data, grants. |
+| `tests/integration/` | Persistence and concurrency checks against Postgres. |
+| `scripts/` | Manual verification against a linked Supabase project. |
 
-**Progress:** M01–M08 done → next is **M09** (Next.js App Router skeleton: a plain home page, no chat). Step-by-step plan: **[MILESTONES.md](./MILESTONES.md)**.
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M08 complete; M09 next).
 
 ## Demo accounts (seed)
 
-Three fixed stories; dates make sense when “today” is **2026-10-22**:
+Three canonical scenarios; refund windows are evaluated against **2026-10-22** in tests and scripts:
 
-| Account | Story |
+| Account | Scenario |
 | --- | --- |
-| `acct-annual-ok` | Annual charge inside the 30-day window → can queue pending. |
-| `acct-monthly-late` | Monthly charge too old → reject, no row. |
-| `acct-double` | Two successful charges on one invoice → the duplicate can queue pending. |
+| `acct-annual-ok` | Annual charge within the 30-day window — eligible to queue. |
+| `acct-monthly-late` | Monthly charge outside the 14-day window — rejected, no row. |
+| `acct-double` | Two successful charges on one invoice — duplicate charge eligible to queue. |
 
-Refund window table and charge-level outcomes are in **M01** in [MILESTONES.md](./MILESTONES.md) and in `lib/refundRules.test.ts`.
+Detailed rule coverage: `lib/refundRules.test.ts` and M01 in [MILESTONES.md](./MILESTONES.md).
 
 ## Local setup
 
 1. `npm install`
-2. Copy `.env.example` → `.env` and fill in (server only—**never** `NEXT_PUBLIC_`):
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — reads through the Supabase API.
-   - `DATABASE_URL` — **session** pooler on **port 5432** (not 6543) for refund writes. Percent-encode special characters in the password.
+2. Copy `.env.example` to `.env` and configure (server-only variables; do not expose secrets via `NEXT_PUBLIC_`):
+   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — read API.
+   - `DATABASE_URL` — Postgres **session** pooler on **port 5432** (not 6543 transaction pooler). Percent-encode special characters in the password.
 
-Linked Supabase project ref is in the repo workflow docs; schema is applied with:
+Apply schema to a linked project:
 
 ```bash
 supabase migration list --linked
 supabase db push    # when a new migration file is ready
 ```
 
-Optional local Postgres via Docker: `supabase start` / `supabase stop`. Day-to-day work in this repo uses the **hosted** linked project.
+Optional local Postgres: `supabase start` / `supabase stop`. Development in this repository typically uses a hosted linked project.
 
 ## Commands
 
 ```bash
 npm test                      # refund rules (no database)
-npm run test:integration      # queueRefund against Postgres (needs DATABASE_URL)
+npm run test:integration      # queueRefund against Postgres (requires DATABASE_URL)
 npm run print:acct-double     # read acct-double from Postgres
-npm run queue:refund-cases    # four M07 write-path checks on 2026-10-22
+npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
 ```
 
-After `queue:refund-cases`, expect **two** pending rows in Supabase (`ch_annual_1`, `ch_double_dup`) until you clear or re-run the script (it resets pending for those charges first). `npm run test:integration` also deletes pending rows for `ch_annual_1`, `ch_monthly_1`, and `ch_double_dup` before and after its cases.
+`queue:refund-cases` leaves two pending rows (`ch_annual_1`, `ch_double_dup`) unless cleared. Integration tests delete pending rows for `ch_annual_1`, `ch_monthly_1`, and `ch_double_dup` before and after each run.
 
-## Project layout (short)
+## Project layout
 
-Business logic lives in **`lib/`**. **`app/`** and **`components/`** appear when the Next.js shell is added (M09). Integration tests live under **`tests/integration/`**. Details: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic resides in **`lib/`**. **`app/`** and **`components/`** are introduced with the Next.js shell (M09). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
