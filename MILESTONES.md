@@ -96,7 +96,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M08 | **Done** |
 | M09 | **Done** |
 | M10 | **Done** |
-| M10b–M26 | Not started |
+| M10b | **Done** |
+| M11–M26 | Not started |
 
 ---
 
@@ -288,7 +289,7 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 ---
 
-### M10b — Demo login and an HttpOnly session
+### M10b — Demo login and an HttpOnly session ✅
 
 **Concept:** The server decides who is signed in. The browser never handles the demo password as a token.
 
@@ -299,6 +300,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You should understand:** This is a single shared demo login, not Supabase Auth and not a user table. M11 and M12 come after this, so account reads and “mark reviewed” both require the session.
 
 **Not in this step:** Account data, refunds.
+
+**Done:** `/login` posts the demo password to `POST /api/login`. The route compares it with `DEMO_PASSWORD` and, on a match, sets an HttpOnly `northline_session` cookie (`SameSite=Lax`, `Secure` in production) signed with `SESSION_SECRET`, then sends the operator to `/workspace`. That page and the data routes check the same cookie; without it, `/workspace` redirects to `/login`. `GET /api/protected` returns 401 without a valid cookie and 200 with one. Page JavaScript cannot read the cookie. No account reads and no refund writes. This is one shared demo login, not Supabase Auth.
 
 ---
 
@@ -625,4 +628,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M10b”**. M10b is demo login and an HttpOnly session cookie. Protected routes return 401 without that cookie. No account data and no refunds.
+Say **“Start M11”**. M11 is the context panel reading one account through your API. That route requires the M10b session cookie. No refund writes.

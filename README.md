@@ -18,20 +18,21 @@ The model may propose or preview outcomes; it is not the authority on eligibilit
 
 ## Implementation status
 
-The **domain layer, database layer, Next.js app shell, and empty workspace layout** are in place. `/workspace` is chat on the left and context on the right, with labeled panels and no live data. Login is the next step (M10b). Present capabilities:
+The **domain layer, database layer, Next.js app shell, empty workspace layout, and demo login** are in place. `/workspace` is chat on the left and context on the right, with labeled panels and no live data. `/login` posts a shared demo password and sets an HttpOnly session cookie. `GET /api/protected` returns 401 without that cookie and 200 after login. Account reads are the next step (M11). Present capabilities:
 
 | Component | Responsibility |
 | --- | --- |
 | `lib/refundRules.ts` | Refund eligibility (unit-tested, in-memory). |
 | `lib/accounts.ts`, `lib/supabase.ts` | Read path for accounts and charges (service role, server-only). |
 | `lib/postgres.ts`, `lib/refunds.ts` | Write path: transactional `queueRefund`. |
+| `lib/session.ts` | Demo password check and signed session token. No user table. |
 | `supabase/migrations/` | Schema, seed data, grants. |
 | `tests/integration/` | Persistence and concurrency checks against Postgres. |
 | `scripts/` | Manual verification against a linked Supabase project. |
-| `app/` | Next.js App Router: root layout, home page, and `/workspace`. |
-| `components/` | Empty workspace panels: Chat, Account, Charges, Policy citations, Pending queue. |
+| `app/` | Next.js App Router: home, `/workspace`, `/login`, `POST /api/login`, `GET /api/protected`. |
+| `components/` | Empty workspace panels, plus the demo login form. |
 
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M10 complete; M10b next).
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M10b complete; M11 next).
 
 ## Demo accounts (seed)
 
@@ -51,6 +52,7 @@ Detailed rule coverage: `lib/refundRules.test.ts` and M01 in [MILESTONES.md](./M
 2. Copy `.env.example` to `.env` and configure (server-only variables; do not expose secrets via `NEXT_PUBLIC_`):
    - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — read API.
    - `DATABASE_URL` — Postgres **session** pooler on **port 5432** (not 6543 transaction pooler). Percent-encode special characters in the password.
+   - `DEMO_PASSWORD`, `SESSION_SECRET` — shared demo login, and the key that signs the HttpOnly session cookie.
 
 Apply schema to a linked project:
 
@@ -75,4 +77,4 @@ npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
 
 ## Project layout
 
-Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, and the `/workspace` route. **`components/`** holds the empty two-column workspace (chat on the left, context panels on the right). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, the `/workspace` route, and the demo login. **`components/`** holds the empty two-column workspace (chat on the left, context panels on the right) and the login form. Session sign and verify live in **`lib/session.ts`**. Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).

@@ -1,0 +1,30 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 20rem;
+  margin-top: 1rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.input {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.button {
+  font: inherit;
+  width: fit-content;
+  padding: 0.5rem 0.85rem;
+  background: #111827;
+  color: #f9fafb;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
