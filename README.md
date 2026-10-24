@@ -18,7 +18,7 @@ The model may propose or preview outcomes; it is not the authority on eligibilit
 
 ## Implementation status
 
-The **domain layer, database layer, and Next.js app shell** are in place. The workspace UI is not (the two-column layout begins at milestone M10). Present capabilities:
+The **domain layer, database layer, Next.js app shell, and empty workspace layout** are in place. `/workspace` is chat on the left and context on the right, with labeled panels and no live data. Login is the next step (M10b). Present capabilities:
 
 | Component | Responsibility |
 | --- | --- |
@@ -28,9 +28,10 @@ The **domain layer, database layer, and Next.js app shell** are in place. The wo
 | `supabase/migrations/` | Schema, seed data, grants. |
 | `tests/integration/` | Persistence and concurrency checks against Postgres. |
 | `scripts/` | Manual verification against a linked Supabase project. |
-| `app/` | Next.js App Router shell: root layout and a plain home page. |
+| `app/` | Next.js App Router: root layout, home page, and `/workspace`. |
+| `components/` | Empty workspace panels: Chat, Account, Charges, Policy citations, Pending queue. |
 
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M09 complete; M10 next).
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M10 complete; M10b next).
 
 ## Demo accounts (seed)
 
@@ -63,7 +64,7 @@ Optional local Postgres: `supabase start` / `supabase stop`. Development in this
 ## Commands
 
 ```bash
-npm run dev                   # local Next.js app (plain home page)
+npm run dev                   # local Next.js app; open /workspace
 npm test                      # refund rules (no database)
 npm run test:integration      # queueRefund against Postgres (requires DATABASE_URL)
 npm run print:acct-double     # read acct-double from Postgres
@@ -74,4 +75,4 @@ npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
 
 ## Project layout
 
-Business logic resides in **`lib/`**. **`app/`** is the Next.js shell (M09): a root layout and a plain home page. **`components/`** arrives with the workspace layout (M10). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, and the `/workspace` route. **`components/`** holds the empty two-column workspace (chat on the left, context panels on the right). Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).

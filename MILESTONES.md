@@ -94,8 +94,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M06 | **Done** |
 | M07 | **Done** |
 | M08 | **Done** |
-| M09 | **Next** |
-| M10–M26 | Not started |
+| M09 | **Done** |
+| M10 | **Done** |
+| M10b–M26 | Not started |
 
 ---
 
@@ -273,7 +274,7 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 ---
 
-### M10 — Two-column workspace layout
+### M10 — Two-column workspace layout ✅
 
 **Concept:** One product surface. Chat on the left. Context on the right.
 
@@ -282,6 +283,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You run:** Open the workspace and see those labels.
 
 **Not in this step:** Live data, a model, login.
+
+**Done:** `/workspace` is the operator surface. Chat is the left column. Account, Charges, Policy citations, and Pending queue are empty labeled panels on the right. `app/workspace/page.tsx` only renders `components/Workspace.tsx`. The home page links there. No live data, no model, and no login.
 
 ---
 
@@ -622,4 +625,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M10”**. M10 is the two-column workspace: empty labeled panels for Chat, Account, Charges, Policy citations, and Pending queue. No live data and no model.
+Say **“Start M10b”**. M10b is demo login and an HttpOnly session cookie. Protected routes return 401 without that cookie. No account data and no refunds.

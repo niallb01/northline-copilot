@@ -1,0 +1,28 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 7rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.fill {
+  flex: 1;
+  min-height: 100%;
+}
+
+.title {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.body {
+  flex: 1;
+}

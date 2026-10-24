@@ -1,0 +1,12 @@
+.main {
+  max-width: 40rem;
+  padding: 2rem 1.5rem;
+}
+
+.main p {
+  line-height: 1.5;
+}
+
+.link {
+  color: #1d4ed8;
+}
