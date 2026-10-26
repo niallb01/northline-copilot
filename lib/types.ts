@@ -1,7 +1,8 @@
 /**
  * Shared shapes for Northline demo data: what an account, a charge, a queued refund,
- * and a refund decision look like in TypeScript. This file does not read a database or
- * call OpenAI; it only describes the fields the rest of lib/ agrees on.
+ * and a refund decision look like in TypeScript. A queued refund is pending until a
+ * person marks it reviewed. Reviewed does not mean money was sent. This file does not
+ * read a database or call OpenAI; it only describes the fields the rest of lib/ agrees on.
  */
 
 export type Plan = "annual" | "monthly";
@@ -32,7 +33,7 @@ export type PendingRefund = {
   invoiceId: string;
   amount: number;
   chargeDate: string;
-  status: "pending";
+  status: "pending" | "reviewed";
   reason: string;
   startedAt: string;
 };

@@ -98,7 +98,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M10 | **Done** |
 | M10b | **Done** |
 | M11 | **Done** |
-| M12–M26 | Not started |
+| M12 | **Done** |
+| M13–M26 | Not started |
 
 ---
 
@@ -331,6 +332,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You run:** Log in. A pending row created in M07 shows in the panel. After the button, it is reviewed and no payment record exists. The same request without the cookie changes nothing.
 
 **Not in this step:** A model, MCP.
+
+**Done:** `GET /api/pending-refunds` checks the M10b session cookie. Without a valid cookie it returns 401 and no queue JSON. With a valid cookie it calls `listPendingRefunds` and returns pending rows from `pending_refunds`. On `/workspace`, the Pending queue panel shows those rows. `POST /api/pending-refunds/review` checks the same cookie, then `markRefundReviewed` sets that row’s status to `reviewed`. The charge is left as it was, and no payment table is written. Without the cookie the row stays unchanged. No model and no MCP.
 
 ---
 
@@ -633,4 +636,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M12”**. M12 is the pending queue, and “mark reviewed” with no payout. That route requires the M10b session cookie. No model and no MCP.
+Say **“Start M13”**. M13 is the tool dispatcher on the server, with no OpenAI.

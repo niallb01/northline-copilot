@@ -13,10 +13,18 @@ import type { Account, Charge, ChargeStatus } from "../lib/types";
 import { Panel } from "./Panel";
 import styles from "./AccountContext.module.css";
 
-type LoadStatus = "idle" | "loading" | "ready" | "missing" | "unauthorized" | "error";
+type LoadStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "missing"
+  | "unauthorized"
+  | "error";
 
 function demoCustomerHint(demo: Account): string {
-  const oneInvoice = demo.charges.every((charge) => charge.invoiceId === demo.charges[0]?.invoiceId);
+  const oneInvoice = demo.charges.every(
+    (charge) => charge.invoiceId === demo.charges[0]?.invoiceId,
+  );
   if (demo.charges.length > 1 && oneInvoice) {
     return "Duplicate billing (demo)";
   }
@@ -28,12 +36,15 @@ function formatPlan(plan: Account["plan"]): string {
 }
 
 function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(amount);
 }
 
 function formatChargeDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -48,13 +59,23 @@ function chargeStatusLabel(status: ChargeStatus): string {
 }
 
 function sameInvoiceNote(charge: Charge, allCharges: Charge[]): string | null {
-  const onSameInvoice = allCharges.filter((row) => row.invoiceId === charge.invoiceId);
+  const onSameInvoice = allCharges.filter(
+    (row) => row.invoiceId === charge.invoiceId,
+  );
   if (onSameInvoice.length <= 1) return null;
-  const index = onSameInvoice.findIndex((row) => row.chargeId === charge.chargeId) + 1;
+  const index =
+    onSameInvoice.findIndex((row) => row.chargeId === charge.chargeId) + 1;
+
   return `${index} of ${onSameInvoice.length} on the same invoice`;
 }
 
-function ChargeRow({ charge, allCharges }: { charge: Charge; allCharges: Charge[] }) {
+function ChargeRow({
+  charge,
+  allCharges,
+}: {
+  charge: Charge;
+  allCharges: Charge[];
+}) {
   const note = sameInvoiceNote(charge, allCharges);
   const statusClass =
     charge.status === "succeeded"
@@ -66,9 +87,15 @@ function ChargeRow({ charge, allCharges }: { charge: Charge; allCharges: Charge[
   return (
     <li className={styles.charge}>
       <div className={styles.chargeMain}>
-        <span className={styles.chargeAmount}>{formatMoney(charge.amount)}</span>
-        <span className={styles.chargeDate}>{formatChargeDate(charge.date)}</span>
-        <span className={`${styles.chargeStatus} ${statusClass}`}>{chargeStatusLabel(charge.status)}</span>
+        <span className={styles.chargeAmount}>
+          {formatMoney(charge.amount)}
+        </span>
+        <span className={styles.chargeDate}>
+          {formatChargeDate(charge.date)}
+        </span>
+        <span className={`${styles.chargeStatus} ${statusClass}`}>
+          {chargeStatusLabel(charge.status)}
+        </span>
       </div>
       {note ? <p className={styles.chargeNote}>{note}</p> : null}
     </li>
@@ -128,7 +155,9 @@ function isCharge(value: unknown): boolean {
     typeof line.invoiceId === "string" &&
     typeof line.amount === "number" &&
     typeof line.date === "string" &&
-    (line.status === "succeeded" || line.status === "failed" || line.status === "refunded")
+    (line.status === "succeeded" ||
+      line.status === "failed" ||
+      line.status === "refunded")
   );
 }
 
@@ -151,9 +180,12 @@ export function AccountContext() {
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/accounts/${encodeURIComponent(trimmed)}`, {
-        headers: { accept: "application/json" },
-      });
+      const response = await fetch(
+        `/api/accounts/${encodeURIComponent(trimmed)}`,
+        {
+          headers: { accept: "application/json" },
+        },
+      );
 
       if (response.status === 401) {
         setAccount(null);
@@ -183,7 +215,6 @@ export function AccountContext() {
         setMessage("Could not load that account.");
         return;
       }
-
       setAccount(body);
       setStatus("ready");
     } catch {
@@ -220,7 +251,11 @@ export function AccountContext() {
                 autoComplete="off"
                 spellCheck={false}
               />
-              <button className={styles.button} type="submit" disabled={status === "loading"}>
+              <button
+                className={styles.button}
+                type="submit"
+                disabled={status === "loading"}
+              >
                 {status === "loading" ? "Searching…" : "Search"}
               </button>
             </div>
@@ -239,10 +274,16 @@ export function AccountContext() {
                       }}
                     >
                       <span className={styles.demoRowTop}>
-                        <span className={styles.demoName}>{demo.customerName}</span>
-                        <span className={styles.demoAcc}>{demo.accountNumber}</span>
+                        <span className={styles.demoName}>
+                          {demo.customerName}
+                        </span>
+                        <span className={styles.demoAcc}>
+                          {demo.accountNumber}
+                        </span>
                       </span>
-                      <span className={styles.demoMeta}>{demoCustomerHint(demo)}</span>
+                      <span className={styles.demoMeta}>
+                        {demoCustomerHint(demo)}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -271,7 +312,11 @@ export function AccountContext() {
             ) : (
               <ul className={styles.charges}>
                 {account.charges.map((charge) => (
-                  <ChargeRow key={charge.chargeId} charge={charge} allCharges={account.charges} />
+                  <ChargeRow
+                    key={charge.chargeId}
+                    charge={charge}
+                    allCharges={account.charges}
+                  />
                 ))}
               </ul>
             )

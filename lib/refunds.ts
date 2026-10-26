@@ -1,9 +1,10 @@
 /**
- * Queues a refund inside one Postgres transaction. It locks the charge, loads the
- * account, charges, and pending rows, then calls requestRefund. It inserts one pending
- * row only when that function accepts. A unique-index clash on the same charge comes
- * back as already pending and leaves the table unchanged. Refund windows stay in
- * lib/refundRules.ts. This does not send money or mark a row reviewed.
+ * Refund queue against Postgres. queueRefund locks the charge, loads the account,
+ * charges, and pending rows, then calls requestRefund. It inserts one pending row
+ * only when that function accepts. listPendingRefunds reads rows still waiting.
+ * markRefundReviewed sets one of those rows to reviewed. A unique-index clash on the
+ * same charge comes back as already pending and leaves the table unchanged. Refund
+ * windows stay in lib/refundRules.ts. None of this sends money or writes a payment.
  */
 
 import { DatabaseError, type PoolClient } from "pg";
@@ -14,6 +15,35 @@ import type { Account, Charge, ChargeStatus, PendingRefund, Plan, RefundResult }
 
 const PENDING_INDEX = "pending_refunds_one_pending_per_charge_idx";
 
+type QueueRefundRow = {
+  account_id: string;
+  customer_name: string;
+  plan: string;
+  charge_id: string;
+  invoice_id: string;
+  amount: number;
+  charge_date: string;
+  status: string;
+  reason: string;
+  started_at: Date | string;
+};
+
+const QUEUE_REFUND_SELECT = `
+  select
+    pending_refunds.account_id,
+    accounts.customer_name,
+    accounts.plan,
+    pending_refunds.charge_id,
+    pending_refunds.invoice_id,
+    pending_refunds.amount,
+    pending_refunds.charge_date::text as charge_date,
+    pending_refunds.status,
+    pending_refunds.reason,
+    pending_refunds.started_at
+  from public.pending_refunds
+  join public.accounts on accounts.id = pending_refunds.account_id
+`;
+
 export type QueueRefundInput = {
   accountId: string;
   chargeId: string;
@@ -22,8 +52,76 @@ export type QueueRefundInput = {
   now?: Date;
 };
 
+export type MarkReviewedInput = {
+  accountId: string;
+  chargeId: string;
+};
+
 export async function queueRefund(input: QueueRefundInput): Promise<RefundResult> {
   return withClient((client) => runQueueRefund(client, input));
+}
+
+export async function listPendingRefunds(): Promise<PendingRefund[]> {
+  return withClient(async (client) => {
+    const result = await client.query<QueueRefundRow>(
+      `${QUEUE_REFUND_SELECT}
+       where pending_refunds.status = 'pending'
+       order by pending_refunds.started_at asc, pending_refunds.id asc`,
+    );
+    return result.rows.map((row) => toQueueRefund(row));
+  });
+}
+
+export async function markRefundReviewed(
+  input: MarkReviewedInput,
+): Promise<PendingRefund | null> {
+  const accountId = input.accountId.trim();
+  const chargeId = input.chargeId.trim();
+  if (!accountId || !chargeId || accountId.length > 80 || chargeId.length > 80) {
+    return null;
+  }
+
+  return withClient(async (client) => {
+    const result = await client.query<QueueRefundRow>(
+      `with updated as (
+         update public.pending_refunds
+         set status = 'reviewed'
+         where account_id = $1
+           and charge_id = $2
+           and status = 'pending'
+         returning
+           account_id,
+           charge_id,
+           invoice_id,
+           amount,
+           charge_date,
+           status,
+           reason,
+           started_at
+       )
+       select
+         updated.account_id,
+         accounts.customer_name,
+         accounts.plan,
+         updated.charge_id,
+         updated.invoice_id,
+         updated.amount,
+         updated.charge_date::text as charge_date,
+         updated.status,
+         updated.reason,
+         updated.started_at
+       from updated
+       join public.accounts on accounts.id = updated.account_id`,
+      [accountId, chargeId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    const refund = toQueueRefund(row);
+    if (refund.status !== "reviewed") {
+      throw new Error("Mark reviewed did not leave the row reviewed.");
+    }
+    return refund;
+  });
 }
 
 async function runQueueRefund(client: PoolClient, input: QueueRefundInput): Promise<RefundResult> {
@@ -183,6 +281,25 @@ function toCharge(row: {
     amount: asInteger(row.amount, "charge amount"),
     date: asDateString(row.date),
     status: asChargeStatus(asString(row.status, "charge status")),
+  };
+}
+
+function toQueueRefund(row: QueueRefundRow): PendingRefund {
+  const status = asString(row.status, "pending status");
+  if (status !== "pending" && status !== "reviewed") {
+    throw new Error(`Unexpected pending status from the database: ${status}`);
+  }
+  return {
+    accountId: asString(row.account_id, "account id"),
+    customerName: asString(row.customer_name, "customer name"),
+    plan: asPlan(asString(row.plan, "account plan")),
+    chargeId: asString(row.charge_id, "charge id"),
+    invoiceId: asString(row.invoice_id, "invoice id"),
+    amount: asInteger(row.amount, "pending amount"),
+    chargeDate: asDateString(row.charge_date),
+    status,
+    reason: asString(row.reason, "pending reason"),
+    startedAt: asStartedAt(row.started_at),
   };
 }
 

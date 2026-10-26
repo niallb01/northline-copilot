@@ -1,12 +1,14 @@
 /**
  * The operator workspace: chat on the left and account context on the right.
- * Account and Charges show facts from the account route. Chat, policy
- * citations, and the pending queue stay empty. This component does not call
- * Supabase, check a session, decide a refund, or queue one.
+ * Account and Charges show facts from the account route. The pending queue
+ * lists refunds waiting for review and can mark one reviewed. Chat and policy
+ * citations stay empty. This component does not call Supabase, check a session,
+ * decide a refund, or send money.
  */
 
 import { AccountContext } from "./AccountContext";
 import { Panel } from "./Panel";
+import { PendingQueue } from "./PendingQueue";
 import styles from "./Workspace.module.css";
 
 export function Workspace() {
@@ -21,8 +23,8 @@ export function Workspace() {
         </div>
         <div className={styles.context} aria-label="Context">
           <AccountContext />
+          <PendingQueue />
           <Panel title="Policy citations" />
-          <Panel title="Pending queue" />
         </div>
       </div>
     </div>

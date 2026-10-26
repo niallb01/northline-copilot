@@ -25,4 +25,10 @@
 
 .body {
   flex: 1;
+  min-height: 0;
+}
+
+.scrollBody {
+  overflow-y: auto;
+  max-height: min(22rem, 50vh);
 }
