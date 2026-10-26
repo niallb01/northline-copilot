@@ -12,6 +12,7 @@ export const STORY_TODAY = "2026-10-22";
 export const seedAccounts: Account[] = [
   {
     id: "acct-annual-ok",
+    accountNumber: "NL-1048291",
     plan: "annual",
     customerName: "Priya Shah",
     charges: [
@@ -26,6 +27,7 @@ export const seedAccounts: Account[] = [
   },
   {
     id: "acct-monthly-late",
+    accountNumber: "NL-1048292",
     plan: "monthly",
     customerName: "Tom Ellis",
     charges: [
@@ -40,6 +42,7 @@ export const seedAccounts: Account[] = [
   },
   {
     id: "acct-double",
+    accountNumber: "NL-1048293",
     plan: "monthly",
     customerName: "Amina Okonkwo",
     charges: [

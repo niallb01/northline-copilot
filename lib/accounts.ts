@@ -6,15 +6,20 @@
  * charge_id). Nothing here starts a refund or writes to pending_refunds.
  */
 
+import { seedAccounts } from "./seed";
 import { getServerSupabase } from "./supabase";
 import type { Account, Charge, ChargeStatus, Plan } from "./types";
 
-export async function getAccount(accountId: string): Promise<Account | null> {
+export async function getAccount(accountKey: string): Promise<Account | null> {
+  const trimmed = accountKey.trim();
+  if (!trimmed) return null;
+
+  const resolvedId = resolveAccountId(trimmed);
   const supabase = getServerSupabase();
   const { data, error } = await supabase
     .from("accounts")
     .select("id, plan, customer_name")
-    .eq("id", accountId)
+    .eq("id", resolvedId)
     .maybeSingle();
 
   if (error) {
@@ -24,14 +29,47 @@ export async function getAccount(accountId: string): Promise<Account | null> {
   if (!data) return null;
 
   const row = parseAccountRow(data);
-  const charges = await listCharges(accountId);
+  const charges = await listCharges(row.id);
 
   return {
     id: row.id,
+    accountNumber: accountNumberFor(row.id),
     plan: asPlan(row.plan),
     customerName: row.customer_name,
     charges,
   };
+}
+
+export function resolveAccountId(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return trimmed;
+
+  const upper = trimmed.toUpperCase();
+  const asAccountNumber = upper.startsWith("NL-") ? upper : /^\d+$/.test(upper) ? `NL-${upper}` : upper;
+  const fromNumber = seedAccounts.find(
+    (account) => account.accountNumber.toUpperCase() === asAccountNumber,
+  );
+  if (fromNumber) return fromNumber.id;
+
+  const fromId = seedAccounts.find((account) => account.id === trimmed);
+  if (fromId) return fromId.id;
+
+  const lower = trimmed.toLowerCase();
+  const exactName = seedAccounts.filter(
+    (account) => account.customerName.toLowerCase() === lower,
+  );
+  if (exactName.length === 1) return exactName[0].id;
+
+  const partialName = seedAccounts.filter((account) =>
+    account.customerName.toLowerCase().includes(lower),
+  );
+  if (partialName.length === 1) return partialName[0].id;
+
+  return trimmed;
+}
+
+export function accountNumberFor(accountId: string): string {
+  return seedAccounts.find((account) => account.id === accountId)?.accountNumber ?? accountId;
 }
 
 export async function listCharges(accountId: string): Promise<Charge[]> {

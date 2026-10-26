@@ -7,6 +7,7 @@
  */
 
 import { DatabaseError, type PoolClient } from "pg";
+import { accountNumberFor } from "./accounts";
 import { withClient } from "./postgres";
 import { requestRefund } from "./refundRules";
 import type { Account, Charge, ChargeStatus, PendingRefund, Plan, RefundResult } from "./types";
@@ -95,8 +96,10 @@ async function loadAccount(client: PoolClient, accountId: string): Promise<Accou
     [accountId],
   );
 
+  const id = asString(accountRow.id, "account id");
   return {
-    id: asString(accountRow.id, "account id"),
+    id,
+    accountNumber: accountNumberFor(id),
     plan: asPlan(asString(accountRow.plan, "account plan")),
     customerName: asString(accountRow.customer_name, "customer name"),
     charges: chargeResult.rows.map((row) => toCharge(row)),

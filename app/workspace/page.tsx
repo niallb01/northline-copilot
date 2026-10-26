@@ -1,8 +1,8 @@
 /**
  * Workspace route at /workspace. Operators need a valid demo session cookie;
- * otherwise the server sends them to /login. It renders the empty two-column
- * layout only. It does not read accounts, list charges, search policy, or
- * queue a refund.
+ * otherwise the server sends them to /login. It renders the workspace. Account
+ * facts are loaded in the browser from the account route, which calls lib/.
+ * This page does not queue a refund, search policy, or call a model.
  */
 
 import { cookies } from "next/headers";

@@ -18,7 +18,7 @@ The model may propose or preview outcomes; it is not the authority on eligibilit
 
 ## Implementation status
 
-The **domain layer, database layer, Next.js app shell, empty workspace layout, and demo login** are in place. `/workspace` is chat on the left and context on the right, with labeled panels and no live data. `/login` posts a shared demo password and sets an HttpOnly session cookie. `GET /api/protected` returns 401 without that cookie and 200 after login. Account reads are the next step (M11). Present capabilities:
+The **domain layer, database layer, Next.js app shell, workspace layout, demo login, and account context read** are in place. `/workspace` is chat on the left and context on the right. The Account and Charges panels load one account through `GET /api/accounts/[accountId]`, which checks the session cookie and calls `getAccount`. Chat, policy citations, and the pending queue stay empty. `/login` posts a shared demo password and sets an HttpOnly session cookie. `GET /api/protected` returns 401 without that cookie and 200 after login. The pending queue is the next step (M12). Present capabilities:
 
 | Component | Responsibility |
 | --- | --- |
@@ -29,10 +29,10 @@ The **domain layer, database layer, Next.js app shell, empty workspace layout, a
 | `supabase/migrations/` | Schema, seed data, grants. |
 | `tests/integration/` | Persistence and concurrency checks against Postgres. |
 | `scripts/` | Manual verification against a linked Supabase project. |
-| `app/` | Next.js App Router: home, `/workspace`, `/login`, `POST /api/login`, `GET /api/protected`. |
-| `components/` | Empty workspace panels, plus the demo login form. |
+| `app/` | Next.js App Router: home, `/workspace`, `/login`, `POST /api/login`, `GET /api/protected`, `GET /api/accounts/[accountId]`. |
+| `components/` | Workspace panels. Account and Charges show facts from the account route. Policy citations, the pending queue, and chat stay empty. Login form. |
 
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M10b complete; M11 next).
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M11 complete; M12 next).
 
 ## Demo accounts (seed)
 
@@ -77,4 +77,4 @@ npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
 
 ## Project layout
 
-Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, the `/workspace` route, and the demo login. **`components/`** holds the empty two-column workspace (chat on the left, context panels on the right) and the login form. Session sign and verify live in **`lib/session.ts`**. Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, the `/workspace` route, the demo login, and the account read route. **`components/`** holds the two-column workspace (chat on the left, context panels on the right), the account lookup that fills Account and Charges, and the login form. Session sign and verify live in **`lib/session.ts`**. Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).

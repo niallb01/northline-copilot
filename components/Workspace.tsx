@@ -1,14 +1,15 @@
 /**
  * The operator workspace: chat on the left and account context on the right.
- * Every panel is an empty label. This component does not read Supabase, call a
- * model, check a session, or queue a refund.
+ * Account and Charges show facts from the account route. Chat, policy
+ * citations, and the pending queue stay empty. This component does not call
+ * Supabase, check a session, decide a refund, or queue one.
  */
 
+import { AccountContext } from "./AccountContext";
 import { Panel } from "./Panel";
 import styles from "./Workspace.module.css";
 
 export function Workspace() {
-  console.log("Workspace component is rendering.");
   return (
     <div className={styles.workspace}>
       <header className={styles.header}>
@@ -19,8 +20,7 @@ export function Workspace() {
           <Panel title="Chat" fill />
         </div>
         <div className={styles.context} aria-label="Context">
-          <Panel title="Account" />
-          <Panel title="Charges" />
+          <AccountContext />
           <Panel title="Policy citations" />
           <Panel title="Pending queue" />
         </div>

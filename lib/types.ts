@@ -18,6 +18,7 @@ export type Charge = {
 
 export type Account = {
   id: string;
+  accountNumber: string;
   plan: Plan;
   customerName: string;
   charges: Charge[];

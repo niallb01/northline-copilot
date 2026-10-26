@@ -30,6 +30,7 @@ if (fromAccount.join(",") !== fromList.join(",")) {
 
 if (
   account.plan !== expected.plan ||
+  account.accountNumber !== expected.accountNumber ||
   account.customerName !== expected.customerName ||
   JSON.stringify(account.charges) !== JSON.stringify(expected.charges)
 ) {

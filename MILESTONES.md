@@ -97,7 +97,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M09 | **Done** |
 | M10 | **Done** |
 | M10b | **Done** |
-| M11–M26 | Not started |
+| M11 | **Done** |
+| M12–M26 | Not started |
 
 ---
 
@@ -314,6 +315,10 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You run:** Log in, enter `acct-annual-ok`, and see Priya Shah and one charge. Call the same route without the cookie and get 401, with no account JSON.
 
 **You should understand:** The panel displays facts. It does not decide refunds.
+
+**Not in this step:** Pending queue, mark reviewed, chat, tools, OpenAI, MCP.
+
+**Done:** `GET /api/accounts/[accountId]` checks the M10b session cookie. Without a valid cookie it returns 401 and no account JSON. With a valid cookie it calls `getAccount` and returns that account and its charges. On `/workspace`, the operator types or selects an id. The Account and Charges panels show those facts (`acct-annual-ok` shows Priya Shah and one charge). The panels do not decide refunds or queue pending rows. Chat, policy citations, and the pending queue stay empty.
 
 ---
 
@@ -628,4 +633,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M11”**. M11 is the context panel reading one account through your API. That route requires the M10b session cookie. No refund writes.
+Say **“Start M12”**. M12 is the pending queue, and “mark reviewed” with no payout. That route requires the M10b session cookie. No model and no MCP.
