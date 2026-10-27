@@ -1,20 +1,18 @@
 /**
- * POST /api/chat. With a valid demo session cookie, asks OpenAI for one chat
- * completion and returns the model's text. Without that cookie it returns 401
- * and no reply. The API key stays in OPENAI_API_KEY on the server. This route
- * does not register tools, look up an account, decide a refund, or write a
- * pending row.
+ * POST /api/chat. With a valid demo session cookie, checks the new message and
+ * prior user and assistant turns, caps that history, and asks OpenAI for one
+ * completion. Without that cookie it returns 401 and no reply. The API key and
+ * the system prompt stay on the server. This route does not register tools,
+ * look up an account, decide a refund, store the thread, or write a pending row.
  */
 
 import { cookies } from "next/headers";
-import { completeChatTurn } from "../../../lib/chat";
+import { completeChatTurn, readChatRequest } from "../../../lib/chat";
 import { SESSION_COOKIE_NAME, verifySession } from "../../../lib/session";
 
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "cache-control": "no-store" };
-
-const MAX_MESSAGE_LENGTH = 2000;
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -24,6 +22,9 @@ export async function POST(request: Request) {
 
   const parsed = await readMessage(request);
   if ("error" in parsed) {
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat rejected:", { error: parsed.error });
+    }
     return Response.json(
       { error: parsed.error },
       { status: 400, headers: NO_STORE },
@@ -32,11 +33,15 @@ export async function POST(request: Request) {
 
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat received:", {
-      body: { message: parsed.message },
+      message: parsed.message,
+      history: parsed.history.map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      })),
     });
   }
 
-  const result = await completeChatTurn(parsed.message);
+  const result = await completeChatTurn(parsed.message, parsed.history);
 
   if (result.ok && result.usage) {
     console.log("POST /api/chat usage:", {
@@ -68,31 +73,13 @@ export async function POST(request: Request) {
   return Response.json({ reply: result.reply }, { status: 200, headers: NO_STORE });
 }
 
-async function readMessage(
-  request: Request,
-): Promise<{ message: string } | { error: string }> {
+async function readMessage(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return { error: "Request body must be JSON." };
   }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return { error: "Request body must be a JSON object." };
-  }
 
-  const row = body as Record<string, unknown>;
-  if (typeof row.message !== "string") {
-    return { error: "A message is required." };
-  }
-
-  const message = row.message.trim();
-  if (!message) {
-    return { error: "A message is required." };
-  }
-  if (message.length > MAX_MESSAGE_LENGTH) {
-    return { error: "That message is too long." };
-  }
-
-  return { message };
+  return readChatRequest(body);
 }

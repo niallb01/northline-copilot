@@ -1,8 +1,10 @@
 /**
  * Chat panel on the left of the workspace. The operator types a message, the
- * browser POSTs it to /api/chat, and the transcript shows that message plus
- * the model's reply. It does not call OpenAI itself, run a tool, decide a
- * refund, or read the session cookie.
+ * browser POSTs that message plus earlier user and assistant turns to
+ * /api/chat, and the transcript shows the message plus the model's reply.
+ * The transcript lives in React state on this page. It does not call OpenAI
+ * itself, run a tool, decide a refund, store the thread on the server, or
+ * read the session cookie.
  */
 
 "use client";
@@ -47,10 +49,15 @@ export function ChatPanel() {
     setDraft("");
     setError(null);
     setSending(true);
+
+    const history = messages.map((entry) => ({
+      role: entry.role,
+      content: entry.text,
+    }));
     appendMessage("user", message);
 
     const chatUrl = "/api/chat";
-    const payload = { message };
+    const payload = { message, history };
 
     try {
       if (process.env.NODE_ENV === "development") {

@@ -1,9 +1,11 @@
 /**
- * Asks OpenAI for one chat completion and returns the model's text. When the
- * provider response includes usage, those token counts are returned so the
- * route can record them. The key is read from OPENAI_API_KEY and is never
- * returned. This file does not register tools, look up an account, decide a
- * refund, or write a pending row.
+ * Asks OpenAI for one chat completion and returns the model's text. The caller
+ * may pass earlier user and assistant turns; those are checked and capped, then
+ * sent with the new message. The system prompt is added here and is never taken
+ * from the caller. When the provider response includes usage, those token
+ * counts are returned so the route can record them. The key is read from
+ * OPENAI_API_KEY and is never returned. This file does not register tools,
+ * look up an account, decide a refund, store the thread, or write a pending row.
  */
 
 const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
@@ -12,9 +14,51 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. You have no tools on this turn, so do not claim you looked up an account or queued a refund.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. You have no tools on this turn, so do not claim you looked up an account or queued a refund.";
+
+/** Newest prior turns forwarded to the model. Older turns are dropped. */
+export const MAX_HISTORY_TURNS = 20;
+
+/** Characters allowed in the new message and in each prior turn. */
+export const MAX_MESSAGE_LENGTH = 2000;
 
 const PUBLIC_ERROR = "Could not get a model reply.";
+
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export function readChatRequest(
+  body: unknown,
+): { message: string; history: ChatTurn[] } | { error: string } {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { error: "Request body must be a JSON object." };
+  }
+
+  const row = body as Record<string, unknown>;
+  if (typeof row.message !== "string") {
+    return { error: "A message is required." };
+  }
+
+  const message = row.message.trim();
+  if (!message) return { error: "A message is required." };
+  if (message.length > MAX_MESSAGE_LENGTH) return { error: "That message is too long." };
+
+  if (row.history === undefined) return { message, history: [] };
+  if (!Array.isArray(row.history)) {
+    return { error: "History must be an array of user and assistant turns." };
+  }
+
+  const history: ChatTurn[] = [];
+  for (const turn of row.history.slice(-MAX_HISTORY_TURNS)) {
+    const parsed = readTurn(turn);
+    if ("error" in parsed) return parsed;
+    history.push(parsed);
+  }
+
+  return { message, history };
+}
 
 export type TokenUsage = {
   promptTokens: number;
@@ -39,6 +83,7 @@ export type ChatCompletionClient = {
 
 export async function completeChatTurn(
   message: string,
+  history: readonly ChatTurn[] = [],
   client: ChatCompletionClient = clientFromEnv(),
 ): Promise<ChatTurnResult> {
   const apiKey = client.apiKey?.trim();
@@ -60,6 +105,10 @@ export async function completeChatTurn(
         model: client.model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
+          ...history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
+            role: turn.role,
+            content: turn.content,
+          })),
           { role: "user", content: message },
         ],
         max_completion_tokens: 300,
@@ -92,6 +141,26 @@ export async function completeChatTurn(
   }
 
   return { ok: true, reply, usage: readUsage(payload) };
+}
+
+function readTurn(turn: unknown): ChatTurn | { error: string } {
+  if (typeof turn !== "object" || turn === null || Array.isArray(turn)) {
+    return { error: "Each history turn must be an object." };
+  }
+
+  const row = turn as Record<string, unknown>;
+  if (row.role !== "user" && row.role !== "assistant") {
+    return { error: "History turns must be user or assistant." };
+  }
+  if (typeof row.content !== "string") {
+    return { error: "Each history turn needs text." };
+  }
+
+  const content = row.content.trim();
+  if (!content) return { error: "Each history turn needs text." };
+  if (content.length > MAX_MESSAGE_LENGTH) return { error: "A history turn is too long." };
+
+  return { role: row.role, content };
 }
 
 function clientFromEnv(): ChatCompletionClient {

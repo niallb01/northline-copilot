@@ -103,6 +103,7 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M13 | **Done** |
 | M14a | **Done** |
 | M14b | **Done** |
+| M14b2 | **Done** |
 | M14c–M26 | Not started |
 
 ---
@@ -381,9 +382,23 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **You run:** Ask a general question. You get a model sentence. The browser network tab does not contain the API key.
 
-**Not in this step:** `get_account`, refunds.
+**Not in this step:** `get_account`, refunds, multi-turn history on the wire (M14b2).
 
-**Done:** `POST /api/chat` still checks the M10b session cookie. With a valid cookie it calls the OpenAI chat completions API from `lib/chat.ts` and returns the model's text as `{ reply }`. `OPENAI_API_KEY` stays in server env and is not sent to the browser. If the provider response includes usage, the route logs prompt, completion, and total tokens. The request registers no tools. No account lookup and no refund.
+**Done:** `POST /api/chat` still checks the M10b session cookie. With a valid cookie it calls the OpenAI chat completions API from `lib/chat.ts` and returns the model's text as `{ reply }`. `OPENAI_API_KEY` stays in server env and is not sent to the browser. If the provider response includes usage, the route logs prompt, completion, and total tokens. The request registers no tools. No account lookup and no refund. Each request sends only the latest user message; prior transcript bubbles are UI-only until M14b2.
+
+---
+
+### M14b2 — Prior turns on the wire
+
+**Concept:** The transcript is not just decoration. Each new message is answered in the context of earlier user and assistant turns in that session.
+
+**Adds:** `ChatPanel` sends the prior transcript (user and assistant roles) with the new message. `POST /api/chat` validates and caps that history, then `lib/chat.ts` passes the full `messages` array to OpenAI (system prompt still set on the server only). Still one `{ reply }` back; still no tools. No server-side thread store yet—the browser holds the transcript in React state, same as today.
+
+**You run:** Ask the capital of Mongolia, then “Uzbekistan?”, then “capital city”. The model uses the thread and names Tashkent without you repeating the country every time.
+
+**Not in this step:** Tools, persisted chat sessions in Postgres, streaming.
+
+**Done:** The Chat panel sends the new message plus earlier user and assistant turns from React state to `POST /api/chat`. The route checks the M10b session cookie, rejects anything that is not user or assistant text, and keeps the newest 20 turns. `lib/chat.ts` places that history after the server-only system prompt and returns one `{ reply }`. The system prompt tells the model a short follow-up refers to those earlier turns. Mongolia, then “Uzbekistan?”, then “capital city” came back as Tashkent. No tools, no Postgres thread store, and no streaming.
 
 ---
 
@@ -391,7 +406,7 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Concept:** The model may request a tool. Your server runs it and sends the result back. Then the model writes the final sentence.
 
-**Adds:** `get_account` registered on the loop from M14b. Print or show the tool name and arguments in the chat transcript.
+**Adds:** `get_account` registered on the loop from M14b2. Print or show the tool name and arguments in the chat transcript.
 
 **You run:** “Look up acct-monthly-late.” The transcript shows a `get_account` call and a short account summary.
 
@@ -651,4 +666,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M14c”**. M14c lets the model call `get_account`, then writes the final sentence.
+Say **“Start M14c”**. M14c lets the model call `get_account`. The server runs that tool, then the model writes the final sentence.
