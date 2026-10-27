@@ -1,18 +1,18 @@
 /**
- * POST /api/chat. With a valid demo session cookie, returns one fixed stub
- * sentence and ignores the wording of the message. Without that cookie it
- * returns 401 and no reply. It does not call OpenAI, read an API key, run a
- * tool, decide a refund, or write a pending row.
+ * POST /api/chat. With a valid demo session cookie, asks OpenAI for one chat
+ * completion and returns the model's text. Without that cookie it returns 401
+ * and no reply. The API key stays in OPENAI_API_KEY on the server. This route
+ * does not register tools, look up an account, decide a refund, or write a
+ * pending row.
  */
 
 import { cookies } from "next/headers";
+import { completeChatTurn } from "../../../lib/chat";
 import { SESSION_COOKIE_NAME, verifySession } from "../../../lib/session";
 
 export const dynamic = "force-dynamic";
 
 const NO_STORE = { "cache-control": "no-store" };
-
-const STUB_REPLY = "Stub reply: chat is connected. No model is answering yet.";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -33,11 +33,39 @@ export async function POST(request: Request) {
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat received:", {
       body: { message: parsed.message },
-      reply: STUB_REPLY,
     });
   }
 
-  return Response.json({ reply: STUB_REPLY }, { status: 200, headers: NO_STORE });
+  const result = await completeChatTurn(parsed.message);
+
+  if (result.ok && result.usage) {
+    console.log("POST /api/chat usage:", {
+      prompt_tokens: result.usage.promptTokens,
+      completion_tokens: result.usage.completionTokens,
+      total_tokens: result.usage.totalTokens,
+    });
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.log(
+      "POST /api/chat response:",
+      result.ok
+        ? { reply: result.reply }
+        : { status: result.status, error: result.error, reason: result.reason },
+    );
+  }
+
+  if (!result.ok) {
+    if (result.reason === "not_configured") {
+      console.error("POST /api/chat: OPENAI_API_KEY is not set");
+    }
+    return Response.json(
+      { error: result.error },
+      { status: result.status, headers: NO_STORE },
+    );
+  }
+
+  return Response.json({ reply: result.reply }, { status: 200, headers: NO_STORE });
 }
 
 async function readMessage(

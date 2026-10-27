@@ -1,8 +1,8 @@
 /**
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs it to /api/chat, and the transcript shows that message plus
- * the fixed stub sentence from the route. It does not call OpenAI, run a
- * tool, decide a refund, or read the session cookie.
+ * the model's reply. It does not call OpenAI itself, run a tool, decide a
+ * refund, or read the session cookie.
  */
 
 "use client";
@@ -19,7 +19,7 @@ type ChatMessage = {
   text: string;
 };
 
-function isStubReply(value: unknown): value is { reply: string } {
+function isModelReply(value: unknown): value is { reply: string } {
   if (typeof value !== "object" || value === null) return false;
   const reply = (value as { reply?: unknown }).reply;
   return typeof reply === "string" && reply.trim().length > 0;
@@ -79,7 +79,7 @@ export function ChatPanel() {
         return;
       }
 
-      if (!response.ok || !isStubReply(body)) {
+      if (!response.ok || !isModelReply(body)) {
         setError("Could not send that message.");
         return;
       }
@@ -104,7 +104,7 @@ export function ChatPanel() {
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Send a message. The reply is a fixed sentence, not a model.
+              Ask a question. The reply comes from the model.
             </p>
           ) : (
             <ol className={styles.list}>
@@ -116,7 +116,7 @@ export function ChatPanel() {
                   }
                 >
                   <span className={styles.role}>
-                    {entry.role === "user" ? "You" : "Stub"}
+                    {entry.role === "user" ? "You" : "Copilot"}
                   </span>
                   <p className={styles.bubble}>{entry.text}</p>
                 </li>

@@ -102,7 +102,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M12 | **Done** |
 | M13 | **Done** |
 | M14a | **Done** |
-| M14b–M26 | Not started |
+| M14b | **Done** |
+| M14c–M26 | Not started |
 
 ---
 
@@ -382,6 +383,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Not in this step:** `get_account`, refunds.
 
+**Done:** `POST /api/chat` still checks the M10b session cookie. With a valid cookie it calls the OpenAI chat completions API from `lib/chat.ts` and returns the model's text as `{ reply }`. `OPENAI_API_KEY` stays in server env and is not sent to the browser. If the provider response includes usage, the route logs prompt, completion, and total tokens. The request registers no tools. No account lookup and no refund.
+
 ---
 
 ### M14c — `get_account` inside the tool loop
@@ -648,4 +651,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M14b”**. M14b calls OpenAI for one real reply, with no tools.
+Say **“Start M14c”**. M14c lets the model call `get_account`, then writes the final sentence.

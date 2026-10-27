@@ -1,6 +1,6 @@
 /**
  * The operator workspace: chat on the left and account context on the right.
- * Chat sends a message to a stub route and shows that reply in the transcript.
+ * Chat sends a message to /api/chat and shows the model reply in the transcript.
  * Account and Charges show facts from the account route. The pending queue
  * lists refunds waiting for review and can mark one reviewed. Policy citations
  * stay empty. This component does not call Supabase, check a session, decide

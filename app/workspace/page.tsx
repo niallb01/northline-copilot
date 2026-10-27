@@ -1,9 +1,9 @@
 /**
  * Workspace route at /workspace. Operators need a valid demo session cookie;
  * otherwise the server sends them to /login. It renders the workspace. Chat
- * posts to a stub route. Account facts and the pending queue are loaded in
- * the browser from routes that call lib/. This page does not queue a refund,
- * search policy, or call a model.
+ * posts to /api/chat. Account facts and the pending queue are loaded in the
+ * browser from routes that call lib/. This page does not queue a refund,
+ * search policy, or call a model itself.
  */
 
 import { cookies } from "next/headers";
