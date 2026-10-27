@@ -1,7 +1,7 @@
 /**
  * Account and Charges panels for one id the operator types or selects. The
- * browser asks GET /api/accounts/[accountId] and renders the facts that come
- * back: name, plan, and charge lines. It does not decide a refund, queue a
+ * browser POSTs get_account to /api/tools and renders the Account in result.
+ * It does not decide a refund, queue a
  * pending row, or read the session cookie.
  */
 
@@ -132,6 +132,14 @@ function noticeForCharges(status: LoadStatus, message: string | null): string {
   }
 }
 
+function isGetAccountToolResult(
+  value: unknown,
+): value is { ok: true; tool: "get_account"; result: Account } {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return row.ok === true && row.tool === "get_account" && isAccount(row.result);
+}
+
 function isAccount(value: unknown): value is Account {
   if (typeof value !== "object" || value === null) return false;
   const row = value as Record<string, unknown>;
@@ -180,12 +188,22 @@ export function AccountContext() {
     setMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/accounts/${encodeURIComponent(trimmed)}`,
-        {
-          headers: { accept: "application/json" },
+      const response = await fetch("/api/tools", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          name: "get_account",
+          arguments: { account_id: trimmed },
+        }),
+      });
+
+      const body: unknown = await response.json();
+      if (process.env.NODE_ENV === "development") {
+        console.log("get_account ToolResult (POST /api/tools):", body);
+      }
 
       if (response.status === 401) {
         setAccount(null);
@@ -208,14 +226,13 @@ export function AccountContext() {
         return;
       }
 
-      const body: unknown = await response.json();
-      if (!isAccount(body)) {
+      if (!isGetAccountToolResult(body)) {
         setAccount(null);
         setStatus("error");
         setMessage("Could not load that account.");
         return;
       }
-      setAccount(body);
+      setAccount(body.result);
       setStatus("ready");
     } catch {
       setAccount(null);

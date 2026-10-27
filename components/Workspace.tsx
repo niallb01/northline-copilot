@@ -1,12 +1,14 @@
 /**
  * The operator workspace: chat on the left and account context on the right.
+ * Chat sends a message to a stub route and shows that reply in the transcript.
  * Account and Charges show facts from the account route. The pending queue
- * lists refunds waiting for review and can mark one reviewed. Chat and policy
- * citations stay empty. This component does not call Supabase, check a session,
- * decide a refund, or send money.
+ * lists refunds waiting for review and can mark one reviewed. Policy citations
+ * stay empty. This component does not call Supabase, check a session, decide
+ * a refund, call a model, or send money.
  */
 
 import { AccountContext } from "./AccountContext";
+import { ChatPanel } from "./ChatPanel";
 import { Panel } from "./Panel";
 import { PendingQueue } from "./PendingQueue";
 import styles from "./Workspace.module.css";
@@ -19,7 +21,7 @@ export function Workspace() {
       </header>
       <div className={styles.columns}>
         <div className={styles.chat}>
-          <Panel title="Chat" fill />
+          <ChatPanel />
         </div>
         <div className={styles.context} aria-label="Context">
           <AccountContext />

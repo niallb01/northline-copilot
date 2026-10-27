@@ -11,6 +11,7 @@
 5. **Safety line.** Nothing in this project pays money. `pending` means a person still has to review it. Reject means no row is saved.
 6. **The database holds the line on writes.** A pending row is inserted inside one Postgres transaction on a direct connection. A unique index stops two pending rows for the same charge. The TypeScript rules still decide eligibility. They are not copied into SQL.
 7. **A button is not authorisation.** From M10b, protected routes check an HttpOnly session cookie set by a server-side demo login. Browser JavaScript never sees the demo password or the session value. The model cannot mint a refund confirmation. MCP is a local process; its write step asks the human to confirm that exact charge.
+8. **Dev wire logs (browser ↔ route).** When a milestone connects UI to an `app/api/…` handler, add short logs gated on `NODE_ENV === "development"`: in the client component, log the method/URL and JSON body before `fetch`, then log response status and body after; in the route handler, log what was received and what is returned (or passed to `lib/`). Browser DevTools shows the client lines; the `next dev` terminal shows the server line. That makes it easy to see what was built and what receives it. Follow the M14a chat and M11 `get_account` patterns unless the step says otherwise.
 
 **What we’re building:** One agent workspace (chat left, context right). Synthetic Northline data only. The model investigates. Code decides refunds. A human confirms before anything is queued.
 
@@ -99,7 +100,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M10b | **Done** |
 | M11 | **Done** |
 | M12 | **Done** |
-| M13–M26 | Not started |
+| M13 | **Done** |
+| M14a | **Done** |
+| M14b–M26 | Not started |
 
 ---
 
@@ -351,6 +354,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Not in this step:** A model, streaming UI.
 
+**Done:** `dispatchTool` in `lib/tools.ts` maps a tool name to a `lib/` function, checks the arguments, and returns JSON. `get_account` calls `getAccount`. `list_charges` calls `listCharges`. A missing account (`acct-missing`) comes back as a clear not-found error, not a stack trace. Unit tests call the dispatcher for both tools. `POST /api/tools` checks the M10b session cookie. Without a valid cookie it returns 401 and does not run a tool. No model and no streaming UI.
+
 ---
 
 ### M14a — Chat panel wired to a stub reply
@@ -362,6 +367,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 **You run:** Type “hello”. The transcript shows your message and the stub reply.
 
 **Not in this step:** An API key, tools.
+
+**Done:** The Chat panel on `/workspace` sends the operator’s message to `POST /api/chat`. That route checks the M10b session cookie. Without a valid cookie it returns 401 and no reply. With a valid cookie it returns one fixed stub sentence and does not call OpenAI, read an API key, or run a tool. The transcript shows the message and that stub reply. No model and no tool loop.
 
 ---
 
@@ -631,9 +638,14 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 1. Open only the current micro-step (for example M02).
 2. Implement only what that step lists under **Adds**.
-3. Run **You run**. Paste the output if it looks wrong.
-4. Say **“M02 done”** before asking for the next step.
+3. If the step wires browser UI to a route handler, add the dev wire logs from **How we work** §8 (client send/reply + server received/response).
+4. Run **You run**. Paste the output if it looks wrong.
+5. Say **“M02 done”** before asking for the next step.
+
+**Optional “Start M…” prompt line** (paste when you want the agent to follow §8):
+
+> When this step adds or changes a browser → API call, include development-only `console.log`s on both sides so I can see URL, request body, and response in DevTools and the dev server terminal.
 
 ## When you’re ready
 
-Say **“Start M13”**. M13 is the tool dispatcher on the server, with no OpenAI.
+Say **“Start M14b”**. M14b calls OpenAI for one real reply, with no tools.
