@@ -29,7 +29,8 @@
 }
 
 .user,
-.assistant {
+.assistant,
+.tool {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -41,7 +42,8 @@
   align-items: flex-end;
 }
 
-.assistant {
+.assistant,
+.tool {
   align-self: flex-start;
 }
 
@@ -70,6 +72,18 @@
 .assistant .bubble {
   background: #f3f4f6;
   color: #111827;
+}
+
+.tool .bubble {
+  background: #fff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+
+.toolName {
+  font-weight: 600;
 }
 
 .composer {

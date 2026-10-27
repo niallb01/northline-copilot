@@ -1,10 +1,10 @@
 /**
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs that message plus earlier user and assistant turns to
- * /api/chat, and the transcript shows the message plus the model's reply.
- * The transcript lives in React state on this page. It does not call OpenAI
- * itself, run a tool, decide a refund, store the thread on the server, or
- * read the session cookie.
+ * /api/chat, and the transcript shows the message, any get_account call, and
+ * the model's reply. The transcript lives in React state on this page. It does
+ * not call OpenAI itself, run a tool, decide a refund, store the thread on the
+ * server, or read the session cookie.
  */
 
 "use client";
@@ -15,30 +15,64 @@ import styles from "./ChatPanel.module.css";
 
 type ChatRole = "user" | "assistant";
 
-type ChatMessage = {
-  id: number;
-  role: ChatRole;
-  text: string;
+type TranscriptEntry =
+  | { id: number; kind: "user" | "assistant"; text: string }
+  | { id: number; kind: "tool"; name: string; arguments: unknown };
+
+type ToolCallView = {
+  name: string;
+  arguments: unknown;
 };
 
-function isModelReply(value: unknown): value is { reply: string } {
-  if (typeof value !== "object" || value === null) return false;
+function readModelReply(value: unknown): { reply: string; toolCalls: ToolCallView[] } | null {
+  if (typeof value !== "object" || value === null) return null;
   const reply = (value as { reply?: unknown }).reply;
-  return typeof reply === "string" && reply.trim().length > 0;
+  if (typeof reply !== "string" || !reply.trim()) return null;
+  const rawCalls = (value as { toolCalls?: unknown }).toolCalls;
+  return { reply: reply.trim(), toolCalls: readToolCalls(rawCalls) };
+}
+
+function readToolCalls(value: unknown): ToolCallView[] {
+  if (!Array.isArray(value)) return [];
+  const calls: ToolCallView[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const name = (item as { name?: unknown }).name;
+    if (typeof name !== "string" || !name.trim()) continue;
+    if (!("arguments" in item)) continue;
+    calls.push({ name: name.trim(), arguments: (item as { arguments: unknown }).arguments });
+  }
+  return calls;
+}
+
+function formatArguments(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
 }
 
 export function ChatPanel() {
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(1);
   const sendingRef = useRef(false);
 
-  function appendMessage(role: ChatRole, text: string) {
+  function appendEntry(entry: {
+    kind: "user" | "assistant";
+    text: string;
+  } | {
+    kind: "tool";
+    name: string;
+    arguments: unknown;
+  }) {
     const id = nextId.current;
     nextId.current += 1;
-    setMessages((current) => [...current, { id, role, text }]);
+    setMessages((current) => [...current, { ...entry, id }]);
   }
 
   async function sendMessage(text: string) {
@@ -50,18 +84,19 @@ export function ChatPanel() {
     setError(null);
     setSending(true);
 
-    const history = messages.map((entry) => ({
-      role: entry.role,
-      content: entry.text,
-    }));
-    appendMessage("user", message);
+    const history: { role: ChatRole; content: string }[] = [];
+    for (const entry of messages) {
+      if (entry.kind === "tool") continue;
+      history.push({ role: entry.kind, content: entry.text });
+    }
+    appendEntry({ kind: "user", text: message });
 
     const chatUrl = "/api/chat";
     const payload = { message, history };
 
     try {
       if (process.env.NODE_ENV === "development") {
-        console.log("Chat send (POST /api/chat):", { url: chatUrl, body: payload });
+        console.log("Chat send clicked → POST /api/chat", { message, priorTurns: history.length });
       }
 
       const response = await fetch(chatUrl, {
@@ -74,24 +109,38 @@ export function ChatPanel() {
       });
 
       const body: unknown = await response.json();
-      if (process.env.NODE_ENV === "development") {
-        console.log("Chat reply (POST /api/chat):", {
-          status: response.status,
-          body,
-        });
-      }
 
       if (response.status === 401) {
         setError("Sign in required.");
         return;
       }
 
-      if (!response.ok || !isModelReply(body)) {
+      const reply = readModelReply(body);
+      if (process.env.NODE_ENV === "development") {
+        console.log("Chat reply (POST /api/chat):", { status: response.status });
+        if (reply) {
+          if (reply.toolCalls.length > 0) {
+            for (const call of reply.toolCalls) {
+              console.log(`Chat tool called: ${call.name}`, call.arguments);
+            }
+          } else {
+            console.log("Chat tool called: (none this turn)");
+          }
+          console.log("Chat assistant text:", reply.reply);
+        } else {
+          console.log("Chat reply body (unexpected):", body);
+        }
+      }
+
+      if (!response.ok || !reply) {
         setError("Could not send that message.");
         return;
       }
 
-      appendMessage("assistant", body.reply);
+      for (const call of reply.toolCalls) {
+        appendEntry({ kind: "tool", name: call.name, arguments: call.arguments });
+      }
+      appendEntry({ kind: "assistant", text: reply.reply });
     } catch {
       setError("Could not send that message.");
     } finally {
@@ -111,7 +160,7 @@ export function ChatPanel() {
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Ask a question. The reply comes from the model.
+              Ask a question, or ask to look up an account. The reply comes from the model.
             </p>
           ) : (
             <ol className={styles.list}>
@@ -119,13 +168,26 @@ export function ChatPanel() {
                 <li
                   key={entry.id}
                   className={
-                    entry.role === "user" ? styles.user : styles.assistant
+                    entry.kind === "user"
+                      ? styles.user
+                      : entry.kind === "tool"
+                        ? styles.tool
+                        : styles.assistant
                   }
                 >
                   <span className={styles.role}>
-                    {entry.role === "user" ? "You" : "Copilot"}
+                    {entry.kind === "user" ? "You" : entry.kind === "tool" ? "Tool" : "Copilot"}
                   </span>
-                  <p className={styles.bubble}>{entry.text}</p>
+                  <p className={styles.bubble}>
+                    {entry.kind === "tool" ? (
+                      <>
+                        <span className={styles.toolName}>{entry.name}</span>{" "}
+                        <span className={styles.toolArgs}>{formatArguments(entry.arguments)}</span>
+                      </>
+                    ) : (
+                      entry.text
+                    )}
+                  </p>
                 </li>
               ))}
             </ol>

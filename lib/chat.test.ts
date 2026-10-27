@@ -1,9 +1,10 @@
 /**
  * Checks one chat completion: prior user and assistant turns go out with the
- * new message, that history is capped, the model's text comes back, token
- * usage is kept when the provider sends it, and the API key is never returned.
- * These tests pass a stand-in fetch. They do not call OpenAI, look up an
- * account, or start Next.js.
+ * new message, that history is capped, get_account is the only registered
+ * tool, a tool result is sent back before the final sentence, token usage is
+ * kept when the provider sends it, and the API key is never returned. These
+ * tests pass a stand-in fetch and a stand-in tool runner. They do not call
+ * OpenAI, open a database, or start Next.js.
  */
 
 import assert from "node:assert/strict";
@@ -34,6 +35,38 @@ function client(
   return { apiKey, model: DEFAULT_CHAT_MODEL, fetch: fetchImpl };
 }
 
+function toolNames(body: { tools?: unknown } | undefined): string[] {
+  const tools = body?.tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.map((tool) => {
+    if (typeof tool !== "object" || tool === null) return "";
+    const fn = (tool as { function?: { name?: unknown } }).function;
+    return typeof fn?.name === "string" ? fn.name : "";
+  });
+}
+
+function toolCallResponse(name: string, args: unknown, id = "call_1") {
+  return jsonResponse(200, {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id,
+              type: "function",
+              function: { name, arguments: JSON.stringify(args) },
+            },
+          ],
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  });
+}
+
 describe("completeChatTurn", () => {
   it("returns the model text and token usage", async () => {
     let requestBody: Record<string, unknown> | undefined;
@@ -61,7 +94,8 @@ describe("completeChatTurn", () => {
       totalTokens: 18,
     });
     assert.equal(requestBody?.model, DEFAULT_CHAT_MODEL);
-    assert.equal("tools" in (requestBody ?? {}), false);
+    assert.deepEqual(toolNames(requestBody), ["get_account"]);
+    assert.equal(result.toolCalls.length, 0);
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     assert.deepEqual(
       messages.map((turn) => turn.role),
@@ -83,7 +117,7 @@ describe("completeChatTurn", () => {
       ),
     );
 
-    assert.deepEqual(result, { ok: true, reply: "Hello.", usage: null });
+    assert.deepEqual(result, { ok: true, reply: "Hello.", usage: null, toolCalls: [] });
   });
 
   it("does not call the provider when the API key is missing", async () => {
@@ -141,6 +175,7 @@ describe("completeChatTurn", () => {
       ok: true,
       reply: "The key is [redacted]",
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      toolCalls: [],
     });
   });
 
@@ -164,7 +199,8 @@ describe("completeChatTurn", () => {
       }),
     );
 
-    assert.equal(requestBody?.tools, undefined);
+    assert.deepEqual(toolNames(requestBody), ["get_account"]);
+    assert.equal(JSON.stringify(requestBody).includes("list_charges"), false);
     assert.deepEqual(
       requestBody?.messages?.map((turn) => turn.role),
       ["system", "user", "assistant", "user", "assistant", "user"],
@@ -201,6 +237,191 @@ describe("completeChatTurn", () => {
     assert.equal(prior.at(-1)?.content, `turn-${MAX_HISTORY_TURNS + 2}`);
     assert.equal(JSON.stringify(messages).includes("turn-0"), false);
     assert.equal(messages.at(-1)?.content, "latest");
+  });
+
+  it("runs get_account and sends the result back before the final sentence", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let ran = 0;
+    const result = await completeChatTurn(
+      "Look up acct-monthly-late.",
+      [
+        { role: "user", content: "What is the capital of Mongolia?" },
+        { role: "assistant", content: "Ulaanbaatar." },
+      ],
+      client(async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        if (bodies.length === 1) return toolCallResponse("get_account", { account_id: "acct-monthly-late" });
+        return jsonResponse(200, {
+          choices: [{ message: { content: "Tom Ellis is on the monthly plan, account acct-monthly-late." } }],
+          usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
+        });
+      }),
+      async (name, args) => {
+        ran += 1;
+        assert.equal(name, "get_account");
+        assert.deepEqual(args, { account_id: "acct-monthly-late" });
+        return {
+          ok: true,
+          tool: "get_account",
+          result: {
+            id: "acct-monthly-late",
+            accountNumber: "NL-1048292",
+            plan: "monthly",
+            customerName: "Tom Ellis",
+            charges: [],
+          },
+        };
+      },
+    );
+
+    assert.equal(ran, 1);
+    assert.equal(bodies.length, 2);
+    assert.deepEqual(toolNames(bodies[0]), ["get_account"]);
+    assert.equal(bodies[0]?.tool_choice, "auto");
+    assert.equal("tools" in (bodies[1] ?? {}), false);
+    assert.equal(JSON.stringify(bodies).includes("list_charges"), false);
+    assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
+
+    const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
+    assert.deepEqual(
+      firstMessages.map((turn) => turn.role),
+      ["system", "user", "assistant", "user"],
+    );
+    assert.match(firstMessages[0]?.content ?? "", /get_account/);
+    assert.equal(firstMessages.at(-1)?.content, "Look up acct-monthly-late.");
+
+    const secondMessages = bodies[1]?.messages as Array<{
+      role: string;
+      tool_call_id?: string;
+      content?: string | null;
+      tool_calls?: Array<{ function: { name: string } }>;
+    }>;
+    assert.equal(secondMessages.at(-2)?.role, "assistant");
+    assert.equal(secondMessages.at(-2)?.tool_calls?.[0]?.function.name, "get_account");
+    assert.equal(secondMessages.at(-1)?.role, "tool");
+    assert.equal(secondMessages.at(-1)?.tool_call_id, "call_1");
+    assert.match(secondMessages.at(-1)?.content ?? "", /Tom Ellis/);
+    assert.match(secondMessages.at(-1)?.content ?? "", /acct-monthly-late/);
+
+    assert.deepEqual(result, {
+      ok: true,
+      reply: "Tom Ellis is on the monthly plan, account acct-monthly-late.",
+      usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
+      toolCalls: [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }],
+    });
+  });
+
+  it("does not run list_charges when the model asks for it", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let ran = false;
+    const result = await completeChatTurn(
+      "List the charges on acct-double.",
+      [],
+      client(async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (bodies.length === 1) {
+          return toolCallResponse("list_charges", { account_id: "acct-double" });
+        }
+        return jsonResponse(200, {
+          choices: [{ message: { content: "I can look up an account, not a charge list." } }],
+        });
+      }),
+      async () => {
+        ran = true;
+        throw new Error("runner should not be called");
+      },
+    );
+
+    assert.equal(ran, false);
+    const toolMessage = (bodies[1]?.messages as Array<{ role: string; content?: string }>).at(-1);
+    assert.equal(toolMessage?.role, "tool");
+    assert.match(toolMessage?.content ?? "", /not available/);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.toolCalls, [
+      { name: "list_charges", arguments: { account_id: "acct-double" } },
+    ]);
+    assert.equal(result.reply, "I can look up an account, not a charge list.");
+  });
+
+  it("sends a tool error when get_account arguments are not JSON", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let ran = false;
+    const result = await completeChatTurn(
+      "Look up an account.",
+      [],
+      client(async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (bodies.length === 1) {
+          return jsonResponse(200, {
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_bad",
+                      type: "function",
+                      function: { name: "get_account", arguments: "{not json" },
+                    },
+                  ],
+                },
+              },
+            ],
+          });
+        }
+        return jsonResponse(200, {
+          choices: [{ message: { content: "I could not read that account id." } }],
+        });
+      }),
+      async () => {
+        ran = true;
+        throw new Error("runner should not be called");
+      },
+    );
+
+    assert.equal(ran, false);
+    const toolMessage = (bodies[1]?.messages as Array<{ role: string; content?: string }>).at(-1);
+    assert.match(toolMessage?.content ?? "", /Tool arguments must be JSON/);
+    assert.equal(JSON.stringify(bodies[1]).includes(API_KEY), false);
+    assert.deepEqual(result, {
+      ok: true,
+      reply: "I could not read that account id.",
+      usage: null,
+      toolCalls: [{ name: "get_account", arguments: "{not json" }],
+    });
+  });
+
+  it("redacts the API key from a tool result before the follow-up", async () => {
+    let followUp = "";
+    const result = await completeChatTurn(
+      "Look up acct-monthly-late.",
+      [],
+      client(async (_url, init) => {
+        const body = String(init?.body);
+        if (!followUp) {
+          followUp = "pending";
+          return toolCallResponse("get_account", { account_id: "acct-monthly-late" });
+        }
+        followUp = body;
+        return jsonResponse(200, {
+          choices: [{ message: { content: `The key is ${API_KEY}` } }],
+        });
+      }),
+      async () => ({
+        ok: false,
+        tool: "get_account",
+        error: `leak ${API_KEY}`,
+      }),
+    );
+
+    assert.equal(followUp.includes(API_KEY), false);
+    assert.match(followUp, /\[redacted\]/);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.reply, "The key is [redacted]");
+    assert.equal(JSON.stringify(result).includes(API_KEY), false);
   });
 });
 

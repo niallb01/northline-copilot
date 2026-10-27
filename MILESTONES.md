@@ -104,7 +104,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M14a | **Done** |
 | M14b | **Done** |
 | M14b2 | **Done** |
-| M14c–M26 | Not started |
+| M14c | **Done** |
+| M15–M26 | Not started |
 
 ---
 
@@ -412,6 +413,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Not in this step:** `list_charges`, refunds, policy search.
 
+**Done:** `POST /api/chat` still checks the M10b session cookie and still sends prior user and assistant turns. The completion now offers only `get_account`. If the model requests that tool, the server runs it through `dispatchTool`, sends the result back, and the model writes the final sentence. The transcript shows the tool name and arguments, then that sentence. “Look up acct-monthly-late.” showed `get_account` with `{"account_id":"acct-monthly-late"}` and a short summary: Tom Ellis, monthly plan, account `acct-monthly-late`. `list_charges` is not on the loop. No refund is queued and no policy search runs.
+
 ---
 
 ### M15 — Add `list_charges` to the loop
@@ -666,4 +669,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M14c”**. M14c lets the model call `get_account`. The server runs that tool, then the model writes the final sentence.
+Say **“Start M15”**. M15 adds `list_charges` on the same loop. Read tools still do not write pending rows.

@@ -1,9 +1,11 @@
 /**
  * POST /api/chat. With a valid demo session cookie, checks the new message and
- * prior user and assistant turns, caps that history, and asks OpenAI for one
- * completion. Without that cookie it returns 401 and no reply. The API key and
- * the system prompt stay on the server. This route does not register tools,
- * look up an account, decide a refund, store the thread, or write a pending row.
+ * prior user and assistant turns, caps that history, and asks OpenAI for a
+ * completion. If the model requests get_account, the server runs that tool and
+ * returns the model's final sentence plus the tool name and arguments. Without
+ * the cookie it returns 401 and no reply. The API key and the system prompt stay
+ * on the server. This route does not register list_charges, decide a refund,
+ * store the thread, or write a pending row.
  */
 
 import { cookies } from "next/headers";
@@ -52,12 +54,28 @@ export async function POST(request: Request) {
   }
 
   if (process.env.NODE_ENV === "development") {
-    console.log(
-      "POST /api/chat response:",
-      result.ok
-        ? { reply: result.reply }
-        : { status: result.status, error: result.error, reason: result.reason },
-    );
+    if (result.ok) {
+      if (result.toolCalls.length > 0) {
+        for (const call of result.toolCalls) {
+          console.log(`POST /api/chat tool ran: ${call.name}`, call.arguments);
+        }
+      } else {
+        console.log("POST /api/chat tool ran: (none this turn)");
+      }
+      console.log("POST /api/chat response:", {
+        reply: result.reply,
+        toolCalls: result.toolCalls.map((call) => ({
+          name: call.name,
+          arguments: call.arguments,
+        })),
+      });
+    } else {
+      console.log("POST /api/chat response:", {
+        status: result.status,
+        error: result.error,
+        reason: result.reason,
+      });
+    }
   }
 
   if (!result.ok) {
@@ -70,7 +88,10 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.json({ reply: result.reply }, { status: 200, headers: NO_STORE });
+  return Response.json(
+    { reply: result.reply, toolCalls: result.toolCalls },
+    { status: 200, headers: NO_STORE },
+  );
 }
 
 async function readMessage(request: Request) {
