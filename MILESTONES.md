@@ -107,7 +107,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M14c     | **Done**    |
 | M15      | **Done**    |
 | M16a     | **Done**    |
-| M16b–M26 | Not started |
+| M16b     | **Done**    |
+| M16c–M26 | Not started |
 
 ---
 
@@ -480,6 +481,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** Deploy, RAG, MCP.
 
+**Done:** The workspace has a Confirm refund control. It POSTs the account id, charge id, and action to `POST /api/refunds/confirm`. That route is not a model tool. It calls `queueRefund` only when the M10b session cookie is valid, the HttpOnly proposal cookie is present, unexpired, and unused, and those three fields match the stored proposal. A body field such as `confirmed: true` is ignored. A rejected service result inserts nothing, and the panel says the refund was not started. A rejected preview does not offer confirm. Confirming the duplicate on `acct-double` (`ch_double_dup`) queued one pending row. Previewing `acct-monthly-late` added no row and no confirm button. A confirm with no matching proposal, and a confirm with `confirmed: true` and no proposal, added no row. `request_refund` is still not a tool. No deploy, no RAG, and no MCP.
+
 ---
 
 ### M16c — Staging deploy of this slice
@@ -675,4 +678,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M16b”**. M16b lets the signed-in human confirm the proposal the server stored. The model cannot confirm for them.
+Say **“Start M16c”**. M16c puts this workspace on a staging URL before RAG and MCP.

@@ -1,8 +1,9 @@
 /**
  * Pending queue panel. The browser asks GET /api/pending-refunds and lists
  * rows still waiting. Mark reviewed posts the account id and charge id to
- * /api/pending-refunds/review and shows the returned status. It does not
- * decide eligibility, send money, or read the session cookie.
+ * /api/pending-refunds/review and shows the returned status. It reloads when
+ * a confirm queues a new row. It does not decide eligibility, send money, or
+ * read the session cookie.
  */
 
 "use client";
@@ -76,9 +77,14 @@ export function PendingQueue() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const busy = useRef(new Set<string>());
 
-  async function load() {
+  async function load(reason: "mount" | "reload" | "queued" = "reload") {
+      const url = "/api/pending-refunds";
+      if (process.env.NODE_ENV === "development") {
+        console.log("GET /api/pending-refunds", { method: "GET", url, reason });
+      }
       try {
-        const response = await fetch("/api/pending-refunds", {
+        const response = await fetch(url, {
+          cache: "no-store",
           headers: { accept: "application/json" },
         });
 
@@ -107,6 +113,17 @@ export function PendingQueue() {
         setRows(body);
         setStatus("ready");
         setMessage(null);
+        if (process.env.NODE_ENV === "development") {
+          console.log("GET /api/pending-refunds response", {
+            status: response.status,
+            pendingCount: body.filter((row) => row.status === "pending").length,
+            rows: body.map((row) => ({
+              accountId: row.accountId,
+              chargeId: row.chargeId,
+              status: row.status,
+            })),
+          });
+        }
       } catch {
         setRows([]);
         setStatus("error");
@@ -115,7 +132,15 @@ export function PendingQueue() {
   }
 
   useEffect(() => {
-    void load();
+    void load("mount");
+    function onQueued() {
+      if (process.env.NODE_ENV === "development") {
+        console.log("Pending queue reload: northline-pending-changed");
+      }
+      void load("queued");
+    }
+    window.addEventListener("northline-pending-changed", onQueued);
+    return () => window.removeEventListener("northline-pending-changed", onQueued);
   }, []);
 
   async function markReviewed(row: PendingRefund) {
@@ -191,7 +216,7 @@ export function PendingQueue() {
             disabled={status === "loading"}
             onClick={() => {
               setStatus("loading");
-              void load();
+              void load("reload");
             }}
           >
             {status === "loading" ? "Loading…" : "Reload list"}

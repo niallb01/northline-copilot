@@ -143,7 +143,7 @@ async function runPreview(
 
     const success = {
       ok: true as const,
-      tool,
+      tool: "preview_refund" as const,
       result: {
         status: decision.status,
         reason: decision.reason,

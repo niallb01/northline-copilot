@@ -2,11 +2,12 @@
  * Signs a refund proposal the chat route can store on an HttpOnly cookie after
  * an eligible preview. The proposal names one account, one charge, the action
  * request_refund, and an expiry. This file does not set the cookie, run a
- * tool, insert a pending row, or mark a proposal used. The model never
+ * tool, insert a pending row, or mark a proposal used. Each signature includes
+ * a random nonce so one cookie cannot stand in for another. The model never
  * receives the signed value.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const PROPOSAL_COOKIE_NAME = "northline_proposal";
 
@@ -92,7 +93,8 @@ export function readProposal(token: string | undefined, now = Date.now()): Refun
 }
 
 function encodePayload(proposal: RefundProposal): string {
-  return Buffer.from(JSON.stringify(proposal), "utf8").toString("base64url");
+  const stored = { ...proposal, nonce: randomBytes(16).toString("base64url") };
+  return Buffer.from(JSON.stringify(stored), "utf8").toString("base64url");
 }
 
 function decodePayload(payload: string): RefundProposal | null {

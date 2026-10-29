@@ -21,6 +21,16 @@ export async function GET() {
 
   try {
     const pending = await listPendingRefunds();
+    if (process.env.NODE_ENV === "development") {
+      console.log("GET /api/pending-refunds response:", {
+        pendingCount: pending.filter((row) => row.status === "pending").length,
+        rows: pending.map((row) => ({
+          accountId: row.accountId,
+          chargeId: row.chargeId,
+          status: row.status,
+        })),
+      });
+    }
     return Response.json(pending, { status: 200, headers: NO_STORE });
   } catch {
     return Response.json(

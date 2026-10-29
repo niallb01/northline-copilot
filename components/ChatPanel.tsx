@@ -3,14 +3,16 @@
  * browser POSTs that message plus earlier user and assistant turns to
  * /api/chat, and the transcript shows the message, any get_account,
  * list_charges, or preview_refund call with its arguments, and the model's
- * reply. The transcript lives in React state on this page. It does not call
- * OpenAI itself, run a tool, decide a refund, store the thread on the server,
- * or read the session cookie.
+ * reply. When that reply includes an eligible proposal, it tells the workspace
+ * so a person can confirm. The transcript lives in React state on this page.
+ * It does not call OpenAI itself, run a tool, decide a refund, store the
+ * thread on the server, read the session cookie, or confirm a refund.
  */
 
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import type { ConfirmOffer } from "../lib/confirmOffer";
 import { Panel } from "./Panel";
 import styles from "./ChatPanel.module.css";
 
@@ -46,6 +48,19 @@ function readToolCalls(value: unknown): ToolCallView[] {
   return calls;
 }
 
+function readConfirmOffer(value: unknown): ConfirmOffer | null {
+  if (typeof value !== "object" || value === null) return null;
+  const proposal = (value as { proposal?: unknown }).proposal;
+  if (typeof proposal !== "object" || proposal === null || Array.isArray(proposal)) return null;
+  const row = proposal as Record<string, unknown>;
+  if (row.action !== "request_refund") return null;
+  if (typeof row.accountId !== "string" || typeof row.chargeId !== "string") return null;
+  const accountId = row.accountId.trim();
+  const chargeId = row.chargeId.trim();
+  if (!accountId || !chargeId) return null;
+  return { accountId, chargeId, action: "request_refund" };
+}
+
 function formatArguments(value: unknown): string {
   if (typeof value === "string") return value;
   try {
@@ -55,7 +70,11 @@ function formatArguments(value: unknown): string {
   }
 }
 
-export function ChatPanel() {
+export function ChatPanel({
+  onConfirmOffer,
+}: {
+  onConfirmOffer?: (offer: ConfirmOffer) => void;
+}) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [sending, setSending] = useState(false);
@@ -117,8 +136,10 @@ export function ChatPanel() {
       }
 
       const reply = readModelReply(body);
+      const offer = readConfirmOffer(body);
       if (process.env.NODE_ENV === "development") {
         console.log("POST /api/chat response", { status: response.status, body });
+        console.log(offer ? "Refund confirm offered:" : "Refund confirm offered: none", offer);
         if (reply) {
           if (reply.toolCalls.length > 0) {
             for (const call of reply.toolCalls) {
@@ -145,6 +166,12 @@ export function ChatPanel() {
         appendEntry({ kind: "tool", name: call.name, arguments: call.arguments });
       }
       appendEntry({ kind: "assistant", text: reply.reply });
+      if (offer) {
+        if (process.env.NODE_ENV === "development") {
+          console.log("Workspace confirm offer set:", offer);
+        }
+        onConfirmOffer?.(offer);
+      }
     } catch {
       setError("Could not send that message.");
     } finally {

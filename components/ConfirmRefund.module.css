@@ -1,0 +1,62 @@
+.panelContent {
+  padding: 0.75rem 1.125rem 1.125rem;
+}
+
+.lead,
+.ids,
+.note,
+.rejected,
+.detail {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.lead {
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.ids {
+  margin-top: 0.45rem;
+  font-size: 0.8125rem;
+  color: #111827;
+}
+
+.button {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: #111827;
+  color: #f9fafb;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.note,
+.rejected,
+.detail {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.note {
+  color: #111827;
+}
+
+.rejected {
+  color: #b91c1c;
+}
+
+.detail {
+  color: #6b7280;
+  font-size: 0.75rem;
+}

@@ -176,6 +176,22 @@ async function runQueueRefund(client: PoolClient, input: QueueRefundInput): Prom
     }
 
     await client.query("commit");
+    if (process.env.NODE_ENV === "development") {
+      if (result.started) {
+        console.log("queueRefund inserted pending row:", {
+          accountId: result.accountId,
+          chargeId: result.chargeId,
+          status: result.status,
+        });
+      } else {
+        console.log("queueRefund rejected (no row inserted):", {
+          accountId: result.accountId,
+          chargeId: result.chargeId,
+          status: result.status,
+          reason: result.reason,
+        });
+      }
+    }
     return result;
   } catch (error) {
     try {
@@ -184,7 +200,16 @@ async function runQueueRefund(client: PoolClient, input: QueueRefundInput): Prom
       // The connection may already be closed. The insert did not commit.
     }
     if (isPendingConflict(error)) {
-      return alreadyPending(accountId, chargeId);
+      const duplicate = alreadyPending(accountId, chargeId);
+      if (process.env.NODE_ENV === "development") {
+        console.log("queueRefund rejected (no row inserted):", {
+          accountId: duplicate.accountId,
+          chargeId: duplicate.chargeId,
+          status: duplicate.status,
+          reason: duplicate.reason,
+        });
+      }
+      return duplicate;
     }
     throw error;
   }

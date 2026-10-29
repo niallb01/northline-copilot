@@ -4,15 +4,17 @@
  * completion. If the model requests get_account, list_charges, or
  * preview_refund, the server runs that tool and returns the model's final
  * sentence plus the tool name and arguments. When the preview would be
- * pending, it stores that proposal on an HttpOnly cookie. The JSON body has
- * no confirmation token. Without the session cookie it returns 401 and no
- * reply. The API key and the system prompt stay on the server. This route
- * does not search policy, store the thread, or write a pending row.
+ * pending, it stores that proposal on an HttpOnly cookie and returns the
+ * account id, charge id, and action so the operator can confirm. The JSON
+ * body has no confirmation token. Without the session cookie it returns 401
+ * and no reply. The API key and the system prompt stay on the server. This
+ * route does not search policy, store the thread, or write a pending row.
  */
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { completeChatTurn, readChatRequest } from "../../../lib/chat";
+import { confirmOfferFromProposal } from "../../../lib/confirmOffer";
 import {
   PROPOSAL_COOKIE_NAME,
   proposalCookieOptions,
@@ -96,24 +98,27 @@ export async function POST(request: Request) {
     );
   }
 
+  const offer = confirmOfferFromProposal(result.proposal);
+  const signed = offer ? signProposal(offer) : null;
   const response = NextResponse.json(
-    { reply: result.reply, toolCalls: result.toolCalls },
+    signed && offer
+      ? { reply: result.reply, toolCalls: result.toolCalls, proposal: offer }
+      : { reply: result.reply, toolCalls: result.toolCalls },
     { status: 200, headers: NO_STORE },
   );
-  const proposal = result.proposal;
-  if (proposal) {
-    const signed = signProposal(proposal);
-    if (signed) {
-      response.cookies.set(PROPOSAL_COOKIE_NAME, signed.token, proposalCookieOptions());
-      if (process.env.NODE_ENV === "development") {
-        console.log("POST /api/chat proposal stored:", {
-          accountId: proposal.accountId,
-          chargeId: proposal.chargeId,
-          action: proposal.action,
-          expiresAt: new Date(signed.exp * 1000).toISOString(),
-        });
-      }
+  if (signed && offer) {
+    response.cookies.set(PROPOSAL_COOKIE_NAME, signed.token, proposalCookieOptions());
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat proposal stored:", {
+        accountId: offer.accountId,
+        chargeId: offer.chargeId,
+        action: offer.action,
+        expiresAt: new Date(signed.exp * 1000).toISOString(),
+      });
+      console.log("POST /api/chat confirm offer:", offer);
     }
+  } else if (process.env.NODE_ENV === "development") {
+    console.log("POST /api/chat confirm offer: none");
   }
   return response;
 }
