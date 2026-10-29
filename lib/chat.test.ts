@@ -1,10 +1,10 @@
 /**
  * Checks one chat completion: prior user and assistant turns go out with the
- * new message, that history is capped, get_account is the only registered
- * tool, a tool result is sent back before the final sentence, token usage is
- * kept when the provider sends it, and the API key is never returned. These
- * tests pass a stand-in fetch and a stand-in tool runner. They do not call
- * OpenAI, open a database, or start Next.js.
+ * new message, that history is capped, get_account and list_charges are the
+ * only registered tools, a tool result is sent back before the final sentence,
+ * token usage is kept when the provider sends it, and the API key is never
+ * returned. These tests pass a stand-in fetch and a stand-in tool runner.
+ * They do not call OpenAI, open a database, or start Next.js.
  */
 
 import assert from "node:assert/strict";
@@ -94,7 +94,7 @@ describe("completeChatTurn", () => {
       totalTokens: 18,
     });
     assert.equal(requestBody?.model, DEFAULT_CHAT_MODEL);
-    assert.deepEqual(toolNames(requestBody), ["get_account"]);
+    assert.deepEqual(toolNames(requestBody), ["get_account", "list_charges"]);
     assert.equal(result.toolCalls.length, 0);
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     assert.deepEqual(
@@ -199,8 +199,9 @@ describe("completeChatTurn", () => {
       }),
     );
 
-    assert.deepEqual(toolNames(requestBody), ["get_account"]);
-    assert.equal(JSON.stringify(requestBody).includes("list_charges"), false);
+    assert.deepEqual(toolNames(requestBody), ["get_account", "list_charges"]);
+    assert.equal(toolNames(requestBody).includes("preview_refund"), false);
+    assert.equal(toolNames(requestBody).includes("search_policy"), false);
     assert.deepEqual(
       requestBody?.messages?.map((turn) => turn.role),
       ["system", "user", "assistant", "user", "assistant", "user"],
@@ -277,10 +278,10 @@ describe("completeChatTurn", () => {
 
     assert.equal(ran, 1);
     assert.equal(bodies.length, 2);
-    assert.deepEqual(toolNames(bodies[0]), ["get_account"]);
+    assert.deepEqual(toolNames(bodies[0]), ["get_account", "list_charges"]);
     assert.equal(bodies[0]?.tool_choice, "auto");
     assert.equal("tools" in (bodies[1] ?? {}), false);
-    assert.equal(JSON.stringify(bodies).includes("list_charges"), false);
+    assert.equal(toolNames(bodies[0]).includes("preview_refund"), false);
     assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
 
     const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
@@ -312,19 +313,100 @@ describe("completeChatTurn", () => {
     });
   });
 
-  it("does not run list_charges when the model asks for it", async () => {
+  it("runs list_charges and sends the charge lines back before the final sentence", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let ran = 0;
+    const result = await completeChatTurn(
+      "What are the charges on acct-double?",
+      [],
+      client(async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        if (bodies.length === 1) return toolCallResponse("list_charges", { account_id: "acct-double" });
+        return jsonResponse(200, {
+          choices: [
+            {
+              message: {
+                content: "acct-double has charges ch_double_1 and ch_double_dup.",
+              },
+            },
+          ],
+          usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
+        });
+      }),
+      async (name, args) => {
+        ran += 1;
+        assert.equal(name, "list_charges");
+        assert.deepEqual(args, { account_id: "acct-double" });
+        return {
+          ok: true,
+          tool: "list_charges",
+          result: [
+            {
+              invoiceId: "in_double_1",
+              chargeId: "ch_double_1",
+              amount: 149,
+              date: "2026-07-23",
+              status: "succeeded",
+            },
+            {
+              invoiceId: "in_double_1",
+              chargeId: "ch_double_dup",
+              amount: 149,
+              date: "2026-07-23",
+              status: "succeeded",
+            },
+          ],
+        };
+      },
+    );
+
+    assert.equal(ran, 1);
+    assert.equal(bodies.length, 2);
+    assert.deepEqual(toolNames(bodies[0]), ["get_account", "list_charges"]);
+    assert.equal("tools" in (bodies[1] ?? {}), false);
+    assert.equal(JSON.stringify(bodies).includes("preview_refund"), false);
+    assert.equal(JSON.stringify(bodies).includes("search_policy"), false);
+    assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
+
+    const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
+    assert.match(firstMessages[0]?.content ?? "", /list_charges/);
+    assert.equal(firstMessages.at(-1)?.content, "What are the charges on acct-double?");
+
+    const secondMessages = bodies[1]?.messages as Array<{
+      role: string;
+      tool_call_id?: string;
+      content?: string | null;
+      tool_calls?: Array<{ function: { name: string } }>;
+    }>;
+    assert.equal(secondMessages.at(-2)?.role, "assistant");
+    assert.equal(secondMessages.at(-2)?.tool_calls?.[0]?.function.name, "list_charges");
+    assert.equal(secondMessages.at(-1)?.role, "tool");
+    assert.equal(secondMessages.at(-1)?.tool_call_id, "call_1");
+    assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_1/);
+    assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_dup/);
+
+    assert.deepEqual(result, {
+      ok: true,
+      reply: "acct-double has charges ch_double_1 and ch_double_dup.",
+      usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
+      toolCalls: [{ name: "list_charges", arguments: { account_id: "acct-double" } }],
+    });
+  });
+
+  it("does not run a refund or policy tool when the model asks for one", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     let ran = false;
     const result = await completeChatTurn(
-      "List the charges on acct-double.",
+      "Refund the duplicate charge.",
       [],
       client(async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         if (bodies.length === 1) {
-          return toolCallResponse("list_charges", { account_id: "acct-double" });
+          return toolCallResponse("preview_refund", { account_id: "acct-double", charge_id: "ch_double_dup" });
         }
         return jsonResponse(200, {
-          choices: [{ message: { content: "I can look up an account, not a charge list." } }],
+          choices: [{ message: { content: "I can look up an account and its charges. I cannot start a refund." } }],
         });
       }),
       async () => {
@@ -340,9 +422,12 @@ describe("completeChatTurn", () => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.deepEqual(result.toolCalls, [
-      { name: "list_charges", arguments: { account_id: "acct-double" } },
+      {
+        name: "preview_refund",
+        arguments: { account_id: "acct-double", charge_id: "ch_double_dup" },
+      },
     ]);
-    assert.equal(result.reply, "I can look up an account, not a charge list.");
+    assert.equal(result.reply, "I can look up an account and its charges. I cannot start a refund.");
   });
 
   it("sends a tool error when get_account arguments are not JSON", async () => {

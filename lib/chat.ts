@@ -1,12 +1,13 @@
 /**
- * Asks OpenAI for a chat completion. When the model requests get_account, this
- * file runs that tool through the dispatcher and sends the result back so the
- * model can write the final sentence. The caller may pass earlier user and
- * assistant turns; those are checked and capped. The system prompt is added
- * here and is never taken from the caller. When the provider response includes
- * usage, those token counts are returned so the route can record them. The key
- * is read from OPENAI_API_KEY and is never returned. This file does not
- * register list_charges, decide a refund, store the thread, or write a pending row.
+ * Asks OpenAI for a chat completion. When the model requests get_account or
+ * list_charges, this file runs that tool through the dispatcher and sends the
+ * result back so the model can write the final sentence. The caller may pass
+ * earlier user and assistant turns; those are checked and capped. The system
+ * prompt is added here and is never taken from the caller. When the provider
+ * response includes usage, those token counts are returned so the route can
+ * record them. The key is read from OPENAI_API_KEY and is never returned.
+ * This file does not decide a refund, search policy, store the thread, or
+ * write a pending row.
  */
 
 import { dispatchTool, type ToolResult } from "./tools";
@@ -17,28 +18,51 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. Do not invent account facts. get_account is the only tool. You cannot queue a refund or search policy.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. Do not invent account or charge facts. get_account and list_charges are the only tools. You cannot queue a refund or search policy.";
 
-/** The only tool this chat loop may run. list_charges stays off the loop. */
-const GET_ACCOUNT_TOOL = {
-  type: "function",
-  function: {
-    name: "get_account",
-    description:
-      "Look up one Northline account by id. Use this when the operator asks to look up an account such as acct-monthly-late. Returns that account. Does not queue a refund or search policy.",
-    parameters: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        account_id: {
-          type: "string",
-          description: "Account id, for example acct-monthly-late.",
+/** Read tools this chat loop may run. Neither writes a pending row. */
+const CHAT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "get_account",
+      description:
+        "Look up one Northline account by id. Use this when the operator asks who the customer is or which plan they are on, for example acct-monthly-late. Returns that account. Does not queue a refund or search policy.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Account id, for example acct-monthly-late.",
+          },
         },
+        required: ["account_id"],
       },
-      required: ["account_id"],
     },
   },
-} as const;
+  {
+    type: "function",
+    function: {
+      name: "list_charges",
+      description:
+        "List the charge lines for one Northline account. Use this when the operator asks for charges or charge ids on an account such as acct-double. Returns those charges, including each charge id. Does not queue a refund or search policy.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Account id, for example acct-double.",
+          },
+        },
+        required: ["account_id"],
+      },
+    },
+  },
+] as const;
+
+const CHAT_TOOL_NAMES = new Set<string>(CHAT_TOOLS.map((tool) => tool.function.name));
 
 /** Tool calls executed in one turn, before the model writes the final sentence. */
 const MAX_TOOL_CALLS = 3;
@@ -140,7 +164,7 @@ export async function completeChatTurn(
 
   const first = await requestCompletion(client, apiKey, {
     messages,
-    tools: [GET_ACCOUNT_TOOL],
+    tools: CHAT_TOOLS,
     tool_choice: "auto",
   });
   if (!first.ok) return first;
@@ -171,12 +195,12 @@ export async function completeChatTurn(
     });
 
     let content: string;
-    if (name !== "get_account") {
+    if (!CHAT_TOOL_NAMES.has(name)) {
       content = JSON.stringify({ ok: false, error: "That tool is not available." });
     } else if (!parsed.ok) {
       content = JSON.stringify({ ok: false, error: parsed.error });
     } else {
-      content = await runGetAccount(runTool, parsed.value, apiKey);
+      content = await runChatTool(runTool, name, parsed.value, apiKey);
     }
 
     toolMessages.push({ role: "tool", tool_call_id: id, content });
@@ -333,20 +357,21 @@ function parseToolArguments(
   }
 }
 
-async function runGetAccount(
+async function runChatTool(
   runTool: ChatToolRunner,
+  name: string,
   args: unknown,
   apiKey: string,
 ): Promise<string> {
   if (process.env.NODE_ENV === "development") {
-    console.log("POST /api/chat passed to lib/:", { name: "get_account", arguments: args });
+    console.log("POST /api/chat passed to lib/:", { name, arguments: args });
   }
 
   let result: ToolResult;
   try {
-    result = await runTool("get_account", args);
+    result = await runTool(name, args);
   } catch {
-    result = { ok: false, tool: "get_account", error: "Could not run get_account." };
+    result = { ok: false, tool: name, error: `Could not run ${name}.` };
   }
 
   const content = redact(JSON.stringify(result), apiKey).slice(0, 8000);

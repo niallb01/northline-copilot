@@ -1,11 +1,11 @@
 /**
  * POST /api/chat. With a valid demo session cookie, checks the new message and
  * prior user and assistant turns, caps that history, and asks OpenAI for a
- * completion. If the model requests get_account, the server runs that tool and
- * returns the model's final sentence plus the tool name and arguments. Without
- * the cookie it returns 401 and no reply. The API key and the system prompt stay
- * on the server. This route does not register list_charges, decide a refund,
- * store the thread, or write a pending row.
+ * completion. If the model requests get_account or list_charges, the server
+ * runs that tool and returns the model's final sentence plus the tool name and
+ * arguments. Without the cookie it returns 401 and no reply. The API key and
+ * the system prompt stay on the server. This route does not decide a refund,
+ * search policy, store the thread, or write a pending row.
  */
 
 import { cookies } from "next/headers";

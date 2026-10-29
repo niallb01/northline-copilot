@@ -38,46 +38,46 @@ tests/
   evals/                  # Behaviour cases and runner (M25; small checks in M08/M16a/M19)
 ```
 
-| Area | Rule |
-| --- | --- |
-| **`lib/`** | Refund rules, tool dispatcher, Supabase read/write services, policy search. Chat routes and MCP handlers call in; they do not duplicate rules. |
-| **`app/`** | HTTP only: pages, layouts, route handlers. Handlers validate session (M10b), then delegate to `lib/`. |
-| **`components/`** | Presentation. No refund windows or policy text hard-coded as source of truth. |
-| **Unit tests** | Colocate as `*.test.ts` beside the file under `lib/` (same pattern for `*.test.tsx` beside a component if we add component tests). |
-| **Integration tests** | `tests/integration/` — Postgres, M07 transaction, concurrency (M08). Not mirrored under every `lib/` file. |
-| **Evals** | `tests/evals/` — prompts, expected tool outcomes, citation checks (M25 grows from M08/M16a/M19 checkpoints). |
-| **State** | No top-level `state/` folder at first. Server truth is Postgres; session/proposal is HttpOnly cookie (M10b/M16); workspace UI uses local React state or URL params until the same logic is reused in two places. |
-| **File headers** | Each new code file under `lib/`, `app/`, `components/`, and `mcp/` starts with one plain-English paragraph (block comment) saying what the file does and what it deliberately does *not* do. |
+| Area                  | Rule                                                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`lib/`**            | Refund rules, tool dispatcher, Supabase read/write services, policy search. Chat routes and MCP handlers call in; they do not duplicate rules.                                                                   |
+| **`app/`**            | HTTP only: pages, layouts, route handlers. Handlers validate session (M10b), then delegate to `lib/`.                                                                                                            |
+| **`components/`**     | Presentation. No refund windows or policy text hard-coded as source of truth.                                                                                                                                    |
+| **Unit tests**        | Colocate as `*.test.ts` beside the file under `lib/` (same pattern for `*.test.tsx` beside a component if we add component tests).                                                                               |
+| **Integration tests** | `tests/integration/` — Postgres, M07 transaction, concurrency (M08). Not mirrored under every `lib/` file.                                                                                                       |
+| **Evals**             | `tests/evals/` — prompts, expected tool outcomes, citation checks (M25 grows from M08/M16a/M19 checkpoints).                                                                                                     |
+| **State**             | No top-level `state/` folder at first. Server truth is Postgres; session/proposal is HttpOnly cookie (M10b/M16); workspace UI uses local React state or URL params until the same logic is reused in two places. |
+| **File headers**      | Each new code file under `lib/`, `app/`, `components/`, and `mcp/` starts with one plain-English paragraph (block comment) saying what the file does and what it deliberately does _not_ do.                     |
 
 **When folders first appear**
 
-| Folder | First milestone |
-| --- | --- |
-| `lib/` | M01 (exists) |
-| `supabase/` | M02 (exists) |
-| `supabase/migrations/` | M03 |
-| `tests/integration/` | M08 |
-| `app/` | M09 |
-| `components/` | M10 (M10b adds the login form as needed) |
-| `tests/evals/` | M16a checkpoint file, expanded in M25 |
-| `mcp/` | M23 |
+| Folder                 | First milestone                          |
+| ---------------------- | ---------------------------------------- |
+| `lib/`                 | M01 (exists)                             |
+| `supabase/`            | M02 (exists)                             |
+| `supabase/migrations/` | M03                                      |
+| `tests/integration/`   | M08                                      |
+| `app/`                 | M09                                      |
+| `components/`          | M10 (M10b adds the login form as needed) |
+| `tests/evals/`         | M16a checkpoint file, expanded in M25    |
+| `mcp/`                 | M23                                      |
 
 ---
 
 ## Phases (map only — you execute micro-steps)
 
-| Phase | Topic | Micro-steps |
-| --- | --- | --- |
-| A | Refund rules in pure code | M01 ✅ |
-| B | Postgres stores accounts and pending | M02–M08 |
-| C | Workspace UI (no model yet) | M09–M12 (login is M10b, before any data route) |
-| D | Agent tool loop, one tool at a time | M13–M16b |
-| D2 | Staging deploy of that slice | M16c |
-| E | Policy RAG (embed → cite → refuse) | M17–M19 |
-| F | Audit and token counts | M20–M22 |
-| G | MCP (same tools as the app) | M23–M24 |
-| H | Full eval scorecard | M25 |
-| I | Portfolio deploy and README | M26 |
+| Phase | Topic                                | Micro-steps                                    |
+| ----- | ------------------------------------ | ---------------------------------------------- |
+| A     | Refund rules in pure code            | M01 ✅                                         |
+| B     | Postgres stores accounts and pending | M02–M08                                        |
+| C     | Workspace UI (no model yet)          | M09–M12 (login is M10b, before any data route) |
+| D     | Agent tool loop, one tool at a time  | M13–M16b                                       |
+| D2    | Staging deploy of that slice         | M16c                                           |
+| E     | Policy RAG (embed → cite → refuse)   | M17–M19                                        |
+| F     | Audit and token counts               | M20–M22                                        |
+| G     | MCP (same tools as the app)          | M23–M24                                        |
+| H     | Full eval scorecard                  | M25                                            |
+| I     | Portfolio deploy and README          | M26                                            |
 
 Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not the first time we check behaviour.
 
@@ -85,27 +85,28 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 
 ## Progress
 
-| Step | Status |
-| --- | --- |
-| M01 | **Done** |
-| M02 | **Done** |
-| M03 | **Done** |
-| M04 | **Done** |
-| M05 | **Done** |
-| M06 | **Done** |
-| M07 | **Done** |
-| M08 | **Done** |
-| M09 | **Done** |
-| M10 | **Done** |
-| M10b | **Done** |
-| M11 | **Done** |
-| M12 | **Done** |
-| M13 | **Done** |
-| M14a | **Done** |
-| M14b | **Done** |
-| M14b2 | **Done** |
-| M14c | **Done** |
-| M15–M26 | Not started |
+| Step     | Status      |
+| -------- | ----------- |
+| M01      | **Done**    |
+| M02      | **Done**    |
+| M03      | **Done**    |
+| M04      | **Done**    |
+| M05      | **Done**    |
+| M06      | **Done**    |
+| M07      | **Done**    |
+| M08      | **Done**    |
+| M09      | **Done**    |
+| M10      | **Done**    |
+| M10b     | **Done**    |
+| M11      | **Done**    |
+| M12      | **Done**    |
+| M13      | **Done**    |
+| M14a     | **Done**    |
+| M14b     | **Done**    |
+| M14b2    | **Done**    |
+| M14c     | **Done**    |
+| M15      | **Done**    |
+| M16a–M26 | Not started |
 
 ---
 
@@ -427,6 +428,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Not in this step:** A refund proposal, policy search.
 
+**Done:** `POST /api/chat` still checks the M10b session cookie and still sends prior user and assistant turns. The completion now offers `get_account` and `list_charges`. If the model requests either tool, the server runs it through `dispatchTool`, sends the result back, and the model writes the final sentence. The transcript shows the tool name and arguments, then that sentence. “What are the charges on acct-double?” showed `list_charges` with `{"account_id":"acct-double"}` and named both charge ids: `ch_double_1` and `ch_double_dup`. No refund is queued and no policy search runs.
+
 ---
 
 ### M16a — The model prepares a refund proposal, and nothing is written
@@ -669,4 +672,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M15”**. M15 adds `list_charges` on the same loop. Read tools still do not write pending rows.
+Say **“Start M16a”**. M16a lets the model preview a refund. That question does not insert a row.

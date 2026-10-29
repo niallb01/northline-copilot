@@ -1,10 +1,10 @@
 /**
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs that message plus earlier user and assistant turns to
- * /api/chat, and the transcript shows the message, any get_account call, and
- * the model's reply. The transcript lives in React state on this page. It does
- * not call OpenAI itself, run a tool, decide a refund, store the thread on the
- * server, or read the session cookie.
+ * /api/chat, and the transcript shows the message, any get_account or
+ * list_charges call, and the model's reply. The transcript lives in React
+ * state on this page. It does not call OpenAI itself, run a tool, decide a
+ * refund, store the thread on the server, or read the session cookie.
  */
 
 "use client";
@@ -96,7 +96,7 @@ export function ChatPanel() {
 
     try {
       if (process.env.NODE_ENV === "development") {
-        console.log("Chat send clicked → POST /api/chat", { message, priorTurns: history.length });
+        console.log("POST /api/chat", { method: "POST", url: chatUrl, body: payload });
       }
 
       const response = await fetch(chatUrl, {
@@ -117,7 +117,7 @@ export function ChatPanel() {
 
       const reply = readModelReply(body);
       if (process.env.NODE_ENV === "development") {
-        console.log("Chat reply (POST /api/chat):", { status: response.status });
+        console.log("POST /api/chat response", { status: response.status, body });
         if (reply) {
           if (reply.toolCalls.length > 0) {
             for (const call of reply.toolCalls) {
@@ -160,7 +160,7 @@ export function ChatPanel() {
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Ask a question, or ask to look up an account. The reply comes from the model.
+              Ask a question, look up an account, or ask for its charges. The reply comes from the model.
             </p>
           ) : (
             <ol className={styles.list}>
