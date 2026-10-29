@@ -1,10 +1,11 @@
 /**
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs that message plus earlier user and assistant turns to
- * /api/chat, and the transcript shows the message, any get_account or
- * list_charges call, and the model's reply. The transcript lives in React
- * state on this page. It does not call OpenAI itself, run a tool, decide a
- * refund, store the thread on the server, or read the session cookie.
+ * /api/chat, and the transcript shows the message, any get_account,
+ * list_charges, or preview_refund call with its arguments, and the model's
+ * reply. The transcript lives in React state on this page. It does not call
+ * OpenAI itself, run a tool, decide a refund, store the thread on the server,
+ * or read the session cookie.
  */
 
 "use client";
@@ -121,6 +122,9 @@ export function ChatPanel() {
         if (reply) {
           if (reply.toolCalls.length > 0) {
             for (const call of reply.toolCalls) {
+              if (call.name === "preview_refund") {
+                console.log("preview_refund called:", call.arguments);
+              }
               console.log(`Chat tool called: ${call.name}`, call.arguments);
             }
           } else {
@@ -160,7 +164,7 @@ export function ChatPanel() {
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Ask a question, look up an account, or ask for its charges. The reply comes from the model.
+              Ask a question, look up an account, ask for its charges, or ask if a charge would be refundable. The reply comes from the model.
             </p>
           ) : (
             <ol className={styles.list}>

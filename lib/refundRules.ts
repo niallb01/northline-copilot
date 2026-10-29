@@ -1,8 +1,9 @@
 /**
  * Decides whether a refund request may be queued for human review. It applies Northline’s
  * fixed rules (annual/monthly windows and duplicate charges on the same invoice). On accept
- * it appends one pending entry to the list you pass in; on reject it changes nothing. This
- * never pays money—that happens only outside this app, if ever.
+ * requestRefund appends one pending entry to the list you pass in; on reject it changes
+ * nothing. previewRefund uses those same checks and appends nothing. This never pays
+ * money—that happens only outside this app, if ever.
  */
 
 import type { Account, PendingRefund, RefundResult } from "./types";
@@ -82,6 +83,18 @@ function windowForPlan(plan: Account["plan"]): number | null {
  * will block two pending rows for the same charge when storage is added.
  */
 export function requestRefund(input: RequestRefundInput): RefundResult {
+  return decideRefund(input, "write");
+}
+
+/**
+ * Run the same eligibility checks as requestRefund and append nothing.
+ * A pending status means the charge would be queued. It does not insert a row.
+ */
+export function previewRefund(input: RequestRefundInput): RefundResult {
+  return decideRefund(input, "preview");
+}
+
+function decideRefund(input: RequestRefundInput, mode: "write" | "preview"): RefundResult {
   const { accountId, chargeId, accounts, pending } = input;
   const today = input.today ?? new Date();
   const now = input.now ?? new Date();
@@ -139,7 +152,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
   const original = originalCharge(account, charge.chargeId, charge.invoiceId);
   if (original) {
     const reason = `Charge ${charge.chargeId} is a second successful charge on invoice ${charge.invoiceId} (original charge ${original.chargeId}). Refund started as pending for a person to approve. No money has been sent.`;
-    pending.push({
+    return queueOrPreview(mode, pending, {
       accountId: account.id,
       customerName: account.customerName,
       plan: account.plan,
@@ -151,13 +164,6 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
       reason,
       startedAt: now.toISOString(),
     });
-    return {
-      started: true,
-      status: "pending",
-      accountId: account.id,
-      chargeId: charge.chargeId,
-      reason,
-    };
   }
 
   // PSEUDO: look up plan window → if plan unknown, reject
@@ -176,7 +182,7 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
   // PSEUDO: if charge age ≤ window → append pending and accept
   if (age <= windowDays) {
     const reason = `${planLabel} charge is ${age} days old (within ${windowDays} days). Refund started as pending for a person to approve. No money has been sent.`;
-    pending.push({
+    return queueOrPreview(mode, pending, {
       accountId: account.id,
       customerName: account.customerName,
       plan: account.plan,
@@ -188,13 +194,6 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
       reason,
       startedAt: now.toISOString(),
     });
-    return {
-      started: true,
-      status: "pending",
-      accountId: account.id,
-      chargeId: charge.chargeId,
-      reason,
-    };
   }
 
   // PSEUDO: charge too old for plan window → reject
@@ -203,4 +202,37 @@ export function requestRefund(input: RequestRefundInput): RefundResult {
     chargeId,
     `${planLabel} charge is ${age} days old (past ${windowDays} days). Refund not started. Nothing was saved.`
   );
+}
+
+function queueOrPreview(
+  mode: "write" | "preview",
+  pending: PendingRefund[],
+  row: PendingRefund,
+): RefundResult {
+  if (mode === "preview") {
+    return {
+      started: false,
+      status: "pending",
+      accountId: row.accountId,
+      chargeId: row.chargeId,
+      reason: previewReason(row.reason),
+    };
+  }
+
+  pending.push(row);
+  return {
+    started: true,
+    status: "pending",
+    accountId: row.accountId,
+    chargeId: row.chargeId,
+    reason: row.reason,
+  };
+}
+
+function previewReason(reason: string): string {
+  const fact = reason.replace(
+    / Refund started as pending for a person to approve\. No money has been sent\.$/,
+    "",
+  );
+  return `${fact} A preview says this would be pending. Nothing was written.`;
 }

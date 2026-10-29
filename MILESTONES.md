@@ -106,7 +106,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M14b2    | **Done**    |
 | M14c     | **Done**    |
 | M15      | **Done**    |
-| M16a–M26 | Not started |
+| M16a     | **Done**    |
+| M16b–M26 | Not started |
 
 ---
 
@@ -452,6 +453,8 @@ Ordinary reads can keep using the Supabase client. This write path does not.
 
 **Not in this step:** The confirm route, RAG, MCP.
 
+**Done:** `POST /api/chat` still checks the M10b session cookie and still sends prior user and assistant turns. The completion now offers `get_account`, `list_charges`, and `preview_refund`. `request_refund` is not a tool. `preview_refund` runs the same eligibility rules in read-only mode and does not call the M07 insert. The tool result is pending or rejected, plus the reason, and has no confirmation token. A missing account is a clear error. When the preview would be pending, the server stores a proposal on an HttpOnly cookie: account id, charge id, action `request_refund`, and an expiry. The model cannot read or create that cookie. The transcript shows the tool name and arguments. The checkpoint cases left `pending_refunds` unchanged at 2 rows, with 0 still pending: an annual charge in the window would be pending, a monthly charge that is too old was rejected, the duplicate charge would be pending, an unknown account was a clear error, and a prompt that said to ignore the rules was still rejected. No confirm route.
+
 ---
 
 ### M16b — The human confirms; the server checks that exact proposal
@@ -672,4 +675,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M16a”**. M16a lets the model preview a refund. That question does not insert a row.
+Say **“Start M16b”**. M16b lets the signed-in human confirm the proposal the server stored. The model cannot confirm for them.

@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { requestRefund } from "./refundRules";
+import { previewRefund, requestRefund } from "./refundRules";
 import { seedAccounts, STORY_TODAY } from "./seed";
 import type { PendingRefund } from "./types";
 
@@ -90,6 +90,63 @@ describe("refund rules for the three seed accounts", () => {
 
     assert.equal(result.status, "rejected");
     assert.equal(result.reason, 'No account with id "acct-missing".');
+    assert.equal(pending.length, 0);
+  });
+});
+
+describe("previewRefund", () => {
+  it("says an in-window annual charge would be pending and appends nothing", () => {
+    const pending: PendingRefund[] = [];
+    const result = previewRefund({
+      accountId: "acct-annual-ok",
+      chargeId: "ch_annual_1",
+      accounts: seedAccounts,
+      pending,
+      today,
+      now,
+    });
+
+    assert.equal(result.started, false);
+    assert.equal(result.status, "pending");
+    assert.match(result.reason, /11 days old \(within 30 days\)/);
+    assert.match(result.reason, /would be pending/);
+    assert.match(result.reason, /Nothing was written/);
+    assert.equal(result.reason.includes("Refund started"), false);
+    assert.equal(pending.length, 0);
+  });
+
+  it("rejects a monthly charge that is too old and appends nothing", () => {
+    const pending: PendingRefund[] = [];
+    const result = previewRefund({
+      accountId: "acct-monthly-late",
+      chargeId: "ch_monthly_1",
+      accounts: seedAccounts,
+      pending,
+      today,
+      now,
+    });
+
+    assert.equal(result.started, false);
+    assert.equal(result.status, "rejected");
+    assert.match(result.reason, /41 days old \(past 14 days\)/);
+    assert.match(result.reason, /Nothing was saved/);
+    assert.equal(pending.length, 0);
+  });
+
+  it("says the duplicate charge would be pending and appends nothing", () => {
+    const pending: PendingRefund[] = [];
+    const result = previewRefund({
+      accountId: "acct-double",
+      chargeId: "ch_double_dup",
+      accounts: seedAccounts,
+      pending,
+      today,
+      now,
+    });
+
+    assert.equal(result.status, "pending");
+    assert.match(result.reason, /second successful charge on invoice in_double_1/);
+    assert.match(result.reason, /would be pending/);
     assert.equal(pending.length, 0);
   });
 });

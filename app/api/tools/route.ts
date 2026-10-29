@@ -1,13 +1,20 @@
 /**
  * POST /api/tools. With a valid demo session cookie, runs one tool through
- * dispatchTool in lib/ and returns that JSON result. Without the cookie it
- * returns 401 and does not run a tool. It does not call OpenAI, stream a
- * reply, decide a refund, or write a pending row.
+ * dispatchTool in lib/ and returns that JSON result. An eligible
+ * preview_refund also stores a proposal on an HttpOnly cookie. The JSON body
+ * has no confirmation token. Without the cookie it returns 401 and does not
+ * run a tool. It does not call OpenAI, stream a reply, or write a pending row.
  */
 
 import { cookies } from "next/headers";
-import { ACCOUNT_NOT_FOUND, dispatchTool, type ToolResult } from "../../../lib/tools";
+import { NextResponse } from "next/server";
+import {
+  PROPOSAL_COOKIE_NAME,
+  proposalCookieOptions,
+  signProposal,
+} from "../../../lib/proposal";
 import { SESSION_COOKIE_NAME, verifySession } from "../../../lib/session";
+import { ACCOUNT_NOT_FOUND, dispatchTool, eligibleProposal, type ToolResult } from "../../../lib/tools";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +36,23 @@ export async function POST(request: Request) {
 
   try {
     const result = await dispatchTool(call.name, call.arguments);
-    return Response.json(result, { status: statusFor(result), headers: NO_STORE });
+    const response = NextResponse.json(result, { status: statusFor(result), headers: NO_STORE });
+    const proposal = eligibleProposal(result);
+    if (proposal) {
+      const signed = signProposal(proposal);
+      if (signed) {
+        response.cookies.set(PROPOSAL_COOKIE_NAME, signed.token, proposalCookieOptions());
+        if (process.env.NODE_ENV === "development") {
+          console.log("POST /api/tools proposal stored:", {
+            accountId: proposal.accountId,
+            chargeId: proposal.chargeId,
+            action: proposal.action,
+            expiresAt: new Date(signed.exp * 1000).toISOString(),
+          });
+        }
+      }
+    }
+    return response;
   } catch {
     return Response.json(
       { ok: false, tool: "", error: "Could not run that tool." },

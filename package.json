@@ -8,7 +8,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/refundRules.test.ts lib/session.test.ts lib/tools.test.ts lib/chat.test.ts",
+    "test": "tsx --test lib/refundRules.test.ts lib/session.test.ts lib/proposal.test.ts lib/tools.test.ts lib/chat.test.ts",
     "test:integration": "node --env-file=.env --import tsx --test tests/integration/queueRefund.test.ts",
     "print:acct-double": "node --env-file=.env --import tsx scripts/print-acct-double.ts",
     "queue:refund-cases": "node --env-file=.env --import tsx scripts/queue-refund-cases.ts"
