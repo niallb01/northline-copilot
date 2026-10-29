@@ -8,6 +8,12 @@ Northline Copilot is designed as a **two-panel workspace**: conversational inves
 
 **Target stack:** Next.js (App Router), Supabase Postgres, pgvector for policy retrieval, OpenAI invoked server-side only, a shared tool layer consumed by both the web app and an MCP stdio server, deployed on Vercel and Supabase.
 
+## Staging
+
+This workspace slice is deployed at https://northline-copilot-5ildndkmr-niallb01.vercel.app.
+
+Server environment variable names: `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, `SESSION_SECRET`.
+
 ## Refund workflow
 
 1. **Read** account and charge data from Postgres (Supabase client for reads).

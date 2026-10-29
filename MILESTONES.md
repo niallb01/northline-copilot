@@ -108,7 +108,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M15      | **Done**    |
 | M16a     | **Done**    |
 | M16b     | **Done**    |
-| M16c–M26 | Not started |
+| M16c     | **Done**    |
+| M17–M26  | Not started |
 
 ---
 
@@ -497,6 +498,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** Policy search, MCP, screenshots, the full eval list.
 
+**Done:** The workspace slice is on a Vercel preview deployment at https://northline-copilot-5ildndkmr-niallb01.vercel.app. Server env on that project holds `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, and `SESSION_SECRET`. The README note lists that URL and those names only. Opened the staging URL, logged in through the form, looked up `acct-monthly-late` (Tom Ellis, charge `ch_monthly_1`), and previewed a refund. `preview_refund` rejected it because the monthly charge is outside the 14-day window. Confirm was not offered. The pending queue still showed only the existing `ch_double_dup` row, and `pending_refunds` gained no row for `acct-monthly-late` (still 6 rows, 1 pending). No policy search and no MCP.
+
 ---
 
 ## Phase E — Policy RAG (answers from stored text)
@@ -678,4 +681,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M16c”**. M16c puts this workspace on a staging URL before RAG and MCP.
+Say **“Start M17”**. M17 stores policy chunks in Postgres. No embeddings yet.
