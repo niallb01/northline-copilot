@@ -109,7 +109,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M16a     | **Done**    |
 | M16b     | **Done**    |
 | M16c     | **Done**    |
-| M17–M26  | Not started |
+| M17      | **Done**    |
+| M18–M26  | Not started |
 
 ---
 
@@ -516,6 +517,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** Vectors, chat.
 
+**Done:** `public.policy_chunks` stores a document id, a chunk id, a source title, and the exact passage text. The migration seeds 18 heading passages from the policy-desk pages: `refunds.md`, `billing.md`, `plans-and-sla.md`, `escalation.md`, and `auth-403-runbook.md`. The table has 18 rows. The `refunds` / `refunds-annual-plans` passage is the annual-plan section word for word. Row level security is on and there are no policies, so the Data API cannot read the table. No embeddings and no chat.
+
 ---
 
 ### M18a — Embedding retrieval with pgvector
@@ -681,4 +684,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M17”**. M17 stores policy chunks in Postgres. No embeddings yet.
+Say **“Start M18a”**. M18a embeds the stored chunks and adds `search_policy`. No chat yet.
