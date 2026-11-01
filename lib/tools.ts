@@ -3,12 +3,14 @@
  * function in lib/, and return a JSON result. get_account calls getAccount.
  * list_charges calls listCharges after that same lookup, so a missing account
  * is a clear not-found error rather than an empty list. preview_refund calls
- * previewRefund, which uses the refund rules and appends nothing. This file
- * does not call OpenAI, stream a reply, call queueRefund, or insert a pending
- * row. The tool result has no confirmation token.
+ * previewRefund, which uses the refund rules and appends nothing. search_policy
+ * calls searchPolicy and returns stored passages or a miss message. This file
+ * does not call OpenAI for chat, stream a reply, call queueRefund, or insert a
+ * pending row. The tool result has no confirmation token.
  */
 
 import { getAccount, listCharges } from "./accounts";
+import { searchPolicy, type PolicySearchResult } from "./policy";
 import { listPendingForAccount } from "./refunds";
 import { previewRefund } from "./refundRules";
 import type { Account, Charge, PendingRefund } from "./types";
@@ -32,6 +34,7 @@ export type ToolResult =
   | { ok: true; tool: "get_account"; result: Account }
   | { ok: true; tool: "list_charges"; result: Charge[] }
   | { ok: true; tool: "preview_refund"; result: PreviewRefundResult }
+  | { ok: true; tool: "search_policy"; result: PolicySearchResult }
   | { ok: false; tool: string; error: string };
 
 export type EligibleProposal = {
@@ -68,12 +71,21 @@ export async function dispatchTool(
   context: DispatchContext = {},
 ): Promise<ToolResult> {
   const tool = typeof name === "string" ? name.trim() : "";
-  if (tool !== "get_account" && tool !== "list_charges" && tool !== "preview_refund") {
+  if (
+    tool !== "get_account" &&
+    tool !== "list_charges" &&
+    tool !== "preview_refund" &&
+    tool !== "search_policy"
+  ) {
     return { ok: false, tool: safeToolLabel(tool), error: "Unknown tool." };
   }
 
   if (tool === "preview_refund") {
     return runPreview(args, readers, context);
+  }
+
+  if (tool === "search_policy") {
+    return runSearchPolicy(args);
   }
 
   const accountId = readAccountId(args);
@@ -94,6 +106,36 @@ export async function dispatchTool(
     return { ok: true, tool, result: charges };
   } catch (error) {
     return { ok: false, tool, error: plainFailure(tool, error) };
+  }
+}
+
+async function runSearchPolicy(args: unknown): Promise<ToolResult> {
+  const tool = "search_policy";
+  const parsed = readPolicyQuery(args);
+  if ("error" in parsed) return { ok: false, tool, error: parsed.error };
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("search_policy called:", { query: parsed.query });
+  }
+
+  try {
+    const result = await searchPolicy(parsed.query);
+    if (process.env.NODE_ENV === "development") {
+      console.log("search_policy result:", {
+        passages: result.passages.length,
+        message: result.message,
+        top: result.passages[0]
+          ? `${result.passages[0].documentId} / ${result.passages[0].chunkId}`
+          : null,
+      });
+    }
+    return { ok: true, tool, result };
+  } catch (error) {
+    const failure = { ok: false as const, tool, error: plainFailure(tool, error) };
+    if (process.env.NODE_ENV === "development") {
+      console.log("search_policy result:", failure);
+    }
+    return failure;
   }
 }
 
@@ -171,6 +213,16 @@ async function runPreview(
 function readAccountId(args: unknown): string | { error: string } {
   if (!isArgsObject(args)) return { error: "Tool arguments must be an object." };
   return readIdValue(args.account_id, "account_id");
+}
+
+function readPolicyQuery(args: unknown): { query: string } | { error: string } {
+  if (!isArgsObject(args)) return { error: "Tool arguments must be an object." };
+  const queryValue = args.query;
+  if (typeof queryValue !== "string") return { error: "query must be a string." };
+  const query = queryValue.trim();
+  if (!query) return { error: "query is required." };
+  if (query.length > 500) return { error: "query is too long." };
+  return { query };
 }
 
 function readPreviewArgs(

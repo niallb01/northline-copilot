@@ -2,7 +2,7 @@
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs that message plus earlier user and assistant turns to
  * /api/chat, and the transcript shows the message, any get_account,
- * list_charges, or preview_refund call with its arguments, and the model's
+ * list_charges, preview_refund, or search_policy call with its arguments, and the model's
  * reply. When that reply includes an eligible proposal, it tells the workspace
  * so a person can confirm. The transcript lives in React state on this page.
  * It does not call OpenAI itself, run a tool, decide a refund, store the
@@ -27,12 +27,27 @@ type ToolCallView = {
   arguments: unknown;
 };
 
-function readModelReply(value: unknown): { reply: string; toolCalls: ToolCallView[] } | null {
+function readModelReply(
+  value: unknown,
+): { reply: string; toolCalls: ToolCallView[]; policySources: string[] } | null {
   if (typeof value !== "object" || value === null) return null;
   const reply = (value as { reply?: unknown }).reply;
   if (typeof reply !== "string" || !reply.trim()) return null;
   const rawCalls = (value as { toolCalls?: unknown }).toolCalls;
-  return { reply: reply.trim(), toolCalls: readToolCalls(rawCalls) };
+  return {
+    reply: reply.trim(),
+    toolCalls: readToolCalls(rawCalls),
+    policySources: readPolicySources((value as { policySources?: unknown }).policySources),
+  };
+}
+
+function readPolicySources(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const paths: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.trim()) paths.push(item.trim());
+  }
+  return paths;
 }
 
 function readToolCalls(value: unknown): ToolCallView[] {
@@ -146,7 +161,13 @@ export function ChatPanel({
               if (call.name === "preview_refund") {
                 console.log("preview_refund called:", call.arguments);
               }
+              if (call.name === "search_policy") {
+                console.log("search_policy called:", call.arguments);
+              }
               console.log(`Chat tool called: ${call.name}`, call.arguments);
+            }
+            if (reply.policySources.length > 0) {
+              console.log("search_policy sources:", reply.policySources);
             }
           } else {
             console.log("Chat tool called: (none this turn)");

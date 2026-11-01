@@ -1,17 +1,18 @@
 /**
  * Asks OpenAI for a chat completion. When the model requests get_account,
- * list_charges, or preview_refund, this file runs that tool through the
- * dispatcher and sends the result back so the model can write the final
- * sentence. An eligible preview is returned separately as a proposal for the
- * route to store on the HttpOnly session. That proposal is not part of the
- * tool result. The caller may pass earlier user and assistant turns; those
+ * list_charges, preview_refund, or search_policy, this file runs that tool
+ * through the dispatcher and sends the result back so the model can write the
+ * final sentence. An eligible preview is returned separately as a proposal
+ * for the route to store on the HttpOnly session. That proposal is not part of
+ * the tool result. The caller may pass earlier user and assistant turns; those
  * are checked and capped. The system prompt is added here and is never taken
  * from the caller. When the provider response includes usage, those token
  * counts are returned so the route can record them. The key is read from
- * OPENAI_API_KEY and is never returned. This file does not search policy,
- * store the thread, insert a pending row, or offer request_refund as a tool.
+ * OPENAI_API_KEY and is never returned. This file does not store the thread,
+ * insert a pending row, or offer request_refund as a tool.
  */
 
+import { collectPolicySourcePaths, type PolicyPassage } from "./policy";
 import { dispatchTool, eligibleProposal, type EligibleProposal, type ToolResult } from "./tools";
 
 const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
@@ -20,7 +21,7 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, and preview_refund are the only tools. You cannot queue a refund or search policy.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic and do not invent a rule. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
 
 /** Tools this chat loop may run. None of them insert a pending row. */
 const CHAT_TOOLS = [
@@ -82,6 +83,25 @@ const CHAT_TOOLS = [
           },
         },
         required: ["account_id", "charge_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_policy",
+      description:
+        "Search stored Northline policy passages by meaning. Use when the operator asks about refund windows, billing, plans, SLA, or escalation. Returns passages with document id and chunk id, or a message when nothing relevant is stored. Does not queue a refund.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          query: {
+            type: "string",
+            description: "Short policy question, for example annual refund window or crypto refund.",
+          },
+        },
+        required: ["query"],
       },
     },
   },
@@ -158,6 +178,8 @@ export type ChatTurnResult =
       reply: string;
       usage: TokenUsage | null;
       toolCalls: ChatToolCall[];
+      /** Paths from search_policy passages; for logs and the citations panel, not the reply text. */
+      policySources: string[];
       proposal: EligibleProposal | null;
     }
   | {
@@ -235,7 +257,14 @@ export async function completeChatTurn(
     if (!reply) {
       return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
     }
-    return { ok: true, reply, usage: readUsage(first.payload), toolCalls: [], proposal: null };
+    return {
+      ok: true,
+      reply,
+      usage: readUsage(first.payload),
+      toolCalls: [],
+      policySources: [],
+      proposal: null,
+    };
   }
 
   const toolCalls: ChatToolCall[] = [];
@@ -243,6 +272,7 @@ export async function completeChatTurn(
   const toolMessages: ProviderMessage[] = [];
   const usedCallIds = new Set<string>();
   let proposal: EligibleProposal | null = null;
+  const policyPassages: PolicyPassage[] = [];
 
   for (const [index, call] of requested.entries()) {
     const id = safeCallId(call.id, index, usedCallIds);
@@ -264,6 +294,9 @@ export async function completeChatTurn(
       const ran = await runChatTool(runTool, name, parsed.value, apiKey);
       content = ran.content;
       if (ran.proposal) proposal = ran.proposal;
+      if (ran.policyPassages.length > 0) {
+        policyPassages.push(...ran.policyPassages);
+      }
     }
 
     toolMessages.push({ role: "tool", tool_call_id: id, content });
@@ -292,6 +325,7 @@ export async function completeChatTurn(
     reply,
     usage: addUsage(readUsage(first.payload), readUsage(followUp.payload)),
     toolCalls,
+    policySources: collectPolicySourcePaths(policyPassages),
     proposal,
   };
 }
@@ -353,6 +387,7 @@ async function completePreviewRefundTurn(
     reply,
     usage: readUsage(followUp.payload),
     toolCalls,
+    policySources: [],
     proposal: ran.proposal,
   };
 }
@@ -487,7 +522,11 @@ async function runChatTool(
   name: string,
   args: unknown,
   apiKey: string,
-): Promise<{ content: string; proposal: EligibleProposal | null }> {
+): Promise<{
+  content: string;
+  proposal: EligibleProposal | null;
+  policyPassages: PolicyPassage[];
+}> {
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat passed to lib/:", { name, arguments: args });
   }
@@ -503,7 +542,9 @@ async function runChatTool(
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat tool result from lib/:", content);
   }
-  return { content, proposal: eligibleProposal(result) };
+  const policyPassages =
+    result.ok && result.tool === "search_policy" ? result.result.passages : [];
+  return { content, proposal: eligibleProposal(result), policyPassages };
 }
 
 function safeCallId(id: string, index: number, used: Set<string>): string {

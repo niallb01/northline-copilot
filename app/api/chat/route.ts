@@ -1,7 +1,7 @@
 /**
  * POST /api/chat. With a valid demo session cookie, checks the new message and
  * prior user and assistant turns, caps that history, and asks OpenAI for a
- * completion. If the model requests get_account, list_charges, or
+ * completion. If the model requests get_account, list_charges, search_policy, or
  * preview_refund, the server runs that tool and returns the model's final
  * sentence plus the tool name and arguments. When the preview would be
  * pending, it stores that proposal on an HttpOnly cookie and returns the
@@ -78,7 +78,11 @@ export async function POST(request: Request) {
           name: call.name,
           arguments: call.arguments,
         })),
+        policySources: result.policySources,
       });
+      if (result.policySources.length > 0) {
+        console.log("POST /api/chat search_policy sources:", result.policySources);
+      }
     } else {
       console.log("POST /api/chat response:", {
         status: result.status,
@@ -102,8 +106,13 @@ export async function POST(request: Request) {
   const signed = offer ? signProposal(offer) : null;
   const response = NextResponse.json(
     signed && offer
-      ? { reply: result.reply, toolCalls: result.toolCalls, proposal: offer }
-      : { reply: result.reply, toolCalls: result.toolCalls },
+      ? {
+          reply: result.reply,
+          toolCalls: result.toolCalls,
+          policySources: result.policySources,
+          proposal: offer,
+        }
+      : { reply: result.reply, toolCalls: result.toolCalls, policySources: result.policySources },
     { status: 200, headers: NO_STORE },
   );
   if (signed && offer) {

@@ -110,7 +110,9 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M16b     | **Done**    |
 | M16c     | **Done**    |
 | M17      | **Done**    |
-| M18–M26  | Not started |
+| M18a     | **Done**    |
+| M18b     | **Done**    |
+| M19–M26  | Not started |
 
 ---
 
@@ -533,6 +535,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** The empty-result rule, the chat panel.
 
+**Done:** pgvector is enabled in the `extensions` schema, and `policy_chunks.embedding` is a 1536-dimension vector. `embedPolicyChunks` filled all 18 rows from the stored passage text with `text-embedding-3-small`. `searchPolicy` in `lib/policy.ts` embeds the question with that same model and returns the nearest rows from `policy_chunks` only: document id, chunk id, source title, and the passage word for word. There is no similarity cutoff, and it does not write a sentence. `npm run search:policy` searched “annual refund window” and printed the `refunds` / `refunds-annual-plans` passage, which matched the stored chunk exactly. No chat and no UI changes.
+
 ---
 
 ### M18b — No match means no policy answer
@@ -544,6 +548,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 **You run:** Search for something the files do not cover (for example a crypto refund). The result has no passage and does not mention a made-up rule.
 
 **Not in this step:** The model in the chat.
+
+**Done:** `searchPolicy` in `lib/policy.ts` keeps a stored passage only when its cosine similarity is at least 0.4. That cutoff is a starting heuristic. It does not prove the passage answers the question. Below it, the result is an empty passage list and the message “The policy does not contain this.” `npm run search:policy` searched “crypto refund”. It returned no passage and that message, and it did not state a crypto refund rule. The same function still returns the stored `refunds` / `refunds-annual-plans` passage for “annual refund window”. No chat and no UI changes.
 
 ---
 
@@ -684,4 +690,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M18a”**. M18a embeds the stored chunks and adds `search_policy`. No chat yet.
+Say **“Start M19”**. M19 puts `search_policy` on the chat tool loop and accepts a citation only when it names a passage that tool returned. It also calibrates the M18b cutoff. A refund in that conversation is still only a preview until a person confirms.

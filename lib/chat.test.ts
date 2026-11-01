@@ -97,7 +97,12 @@ describe("completeChatTurn", () => {
       totalTokens: 18,
     });
     assert.equal(requestBody?.model, DEFAULT_CHAT_MODEL);
-    assert.deepEqual(toolNames(requestBody), ["get_account", "list_charges", "preview_refund"]);
+    assert.deepEqual(toolNames(requestBody), [
+      "get_account",
+      "list_charges",
+      "preview_refund",
+      "search_policy",
+    ]);
     assert.equal(toolNames(requestBody).includes("request_refund"), false);
     assert.equal(result.toolCalls.length, 0);
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
@@ -121,7 +126,14 @@ describe("completeChatTurn", () => {
       ),
     );
 
-    assert.deepEqual(result, { ok: true, reply: "Hello.", usage: null, toolCalls: [], proposal: null });
+    assert.deepEqual(result, {
+      ok: true,
+      reply: "Hello.",
+      usage: null,
+      toolCalls: [],
+      policySources: [],
+      proposal: null,
+    });
   });
 
   it("does not call the provider when the API key is missing", async () => {
@@ -180,6 +192,7 @@ describe("completeChatTurn", () => {
       reply: "The key is [redacted]",
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       toolCalls: [],
+      policySources: [],
       proposal: null,
     });
   });
@@ -204,9 +217,14 @@ describe("completeChatTurn", () => {
       }),
     );
 
-    assert.deepEqual(toolNames(requestBody), ["get_account", "list_charges", "preview_refund"]);
+    assert.deepEqual(toolNames(requestBody), [
+      "get_account",
+      "list_charges",
+      "preview_refund",
+      "search_policy",
+    ]);
     assert.equal(toolNames(requestBody).includes("request_refund"), false);
-    assert.equal(toolNames(requestBody).includes("search_policy"), false);
+    assert.equal(toolNames(requestBody).includes("search_policy"), true);
     assert.deepEqual(
       requestBody?.messages?.map((turn) => turn.role),
       ["system", "user", "assistant", "user", "assistant", "user"],
@@ -283,7 +301,12 @@ describe("completeChatTurn", () => {
 
     assert.equal(ran, 1);
     assert.equal(bodies.length, 2);
-    assert.deepEqual(toolNames(bodies[0]), ["get_account", "list_charges", "preview_refund"]);
+    assert.deepEqual(toolNames(bodies[0]), [
+      "get_account",
+      "list_charges",
+      "preview_refund",
+      "search_policy",
+    ]);
     assert.equal(bodies[0]?.tool_choice, "auto");
     assert.equal("tools" in (bodies[1] ?? {}), false);
     assert.equal(toolNames(bodies[0]).includes("request_refund"), false);
@@ -315,6 +338,7 @@ describe("completeChatTurn", () => {
       reply: "Tom Ellis is on the monthly plan, account acct-monthly-late.",
       usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
       toolCalls: [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }],
+      policySources: [],
       proposal: null,
     });
   });
@@ -369,10 +393,15 @@ describe("completeChatTurn", () => {
 
     assert.equal(ran, 1);
     assert.equal(bodies.length, 2);
-    assert.deepEqual(toolNames(bodies[0]), ["get_account", "list_charges", "preview_refund"]);
+    assert.deepEqual(toolNames(bodies[0]), [
+      "get_account",
+      "list_charges",
+      "preview_refund",
+      "search_policy",
+    ]);
     assert.equal("tools" in (bodies[1] ?? {}), false);
     assert.equal(JSON.stringify(bodies).includes("request_refund"), false);
-    assert.equal(JSON.stringify(bodies).includes("search_policy"), false);
+    assert.equal(JSON.stringify(bodies).includes("search_policy"), true);
     assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
 
     const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
@@ -397,6 +426,7 @@ describe("completeChatTurn", () => {
       reply: "acct-double has charges ch_double_1 and ch_double_dup.",
       usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
       toolCalls: [{ name: "list_charges", arguments: { account_id: "acct-double" } }],
+      policySources: [],
       proposal: null,
     });
   });
@@ -437,6 +467,7 @@ describe("completeChatTurn", () => {
       toolCalls: [
         { name: "preview_refund", arguments: { account_id: "acct-missing", charge_id: "ch_nope" } },
       ],
+      policySources: [],
       proposal: null,
     });
   });
@@ -493,6 +524,7 @@ describe("completeChatTurn", () => {
           arguments: { account_id: "acct-annual-ok", charge_id: "ch_annual_1" },
         },
       ],
+      policySources: [],
       proposal: {
         accountId: "acct-annual-ok",
         chargeId: "ch_annual_1",
@@ -584,6 +616,7 @@ describe("completeChatTurn", () => {
       reply: "I could not read that account id.",
       usage: null,
       toolCalls: [{ name: "get_account", arguments: "{not json" }],
+      policySources: [],
       proposal: null,
     });
   });
