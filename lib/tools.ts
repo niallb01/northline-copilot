@@ -1,15 +1,25 @@
 /**
  * Runs one named tool on the server: check the arguments, call the matching
- * function in lib/, and return a JSON result. get_account calls getAccount.
+ * function in lib/, and return a JSON result. Every call writes one audit row
+ * with the tool name, the arguments, the outcome, and pending_row_created.
+ * Stored arguments omit API keys and raw secrets. get_account calls getAccount.
  * list_charges calls listCharges after that same lookup, so a missing account
  * is a clear not-found error rather than an empty list. preview_refund calls
  * previewRefund, which uses the refund rules and appends nothing. search_policy
- * calls searchPolicy and returns stored passages or a miss message. This file
- * does not call OpenAI for chat, stream a reply, call queueRefund, or insert a
- * pending row. The tool result has no confirmation token.
+ * calls searchPolicy and returns stored passages or a miss message.
+ * request_refund is not a tool: that call is logged as a rejection and does not
+ * insert a pending row. This file does not call OpenAI for chat, stream a reply,
+ * call queueRefund, or insert a pending row. pending_row_created is false.
+ * The tool result has no confirmation token.
  */
 
 import { getAccount, listCharges } from "./accounts";
+import {
+  sanitizeAuditArguments,
+  toolNameForAudit,
+  writeAuditLog,
+  type AuditWriter,
+} from "./audit";
 import { searchPolicy, type PolicySearchResult } from "./policy";
 import { listPendingForAccount } from "./refunds";
 import { previewRefund } from "./refundRules";
@@ -69,6 +79,23 @@ export async function dispatchTool(
   args: unknown,
   readers: ToolReaders = defaultReaders,
   context: DispatchContext = {},
+  writeAudit: AuditWriter = writeAuditLog,
+): Promise<ToolResult> {
+  const result = await executeTool(name, args, readers, context);
+  await writeAudit({
+    toolName: toolNameForAudit(result.tool),
+    arguments: sanitizeAuditArguments(args),
+    outcome: sanitizeAuditArguments(result),
+    pendingRowCreated: false,
+  });
+  return result;
+}
+
+async function executeTool(
+  name: unknown,
+  args: unknown,
+  readers: ToolReaders,
+  context: DispatchContext,
 ): Promise<ToolResult> {
   const tool = typeof name === "string" ? name.trim() : "";
   if (

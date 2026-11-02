@@ -2,15 +2,24 @@
  * Checks the tool dispatcher: get_account and list_charges call the account
  * readers, preview_refund uses the refund rules without appending a pending
  * row, search_policy rejects a missing query before it searches, bad arguments
- * are rejected, and a missing account is a plain not-found error. These tests
- * pass in stand-in readers. They do not open a database, call OpenAI, or start
- * Next.js.
+ * are rejected, and a missing account is a plain not-found error. Each call
+ * records one audit row, including failures, and never marks a pending row as
+ * created. Secrets in the arguments are not stored. These tests pass in
+ * stand-in readers and a stand-in audit writer. They do not open a database,
+ * call OpenAI, or start Next.js.
  */
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { AuditLogInput } from "./audit";
 import { seedAccounts, STORY_TODAY } from "./seed";
-import { ACCOUNT_NOT_FOUND, dispatchTool, eligibleProposal, type ToolReaders } from "./tools";
+import {
+  ACCOUNT_NOT_FOUND,
+  dispatchTool,
+  eligibleProposal,
+  type DispatchContext,
+  type ToolReaders,
+} from "./tools";
 import type { Account, Charge, PendingRefund } from "./types";
 
 const today = new Date(2026, 9, 22);
@@ -34,9 +43,28 @@ function readers(overrides: Partial<ToolReaders> = {}): ToolReaders {
   };
 }
 
+const recorded: AuditLogInput[] = [];
+
+async function dispatch(
+  name: unknown,
+  args: unknown,
+  toolReaders: ToolReaders = readers(),
+  context: DispatchContext = {},
+) {
+  const before = recorded.length;
+  const result = await dispatchTool(name, args, toolReaders, context, async (entry) => {
+    recorded.push(entry);
+  });
+  assert.equal(recorded.length, before + 1);
+  const entry = recorded[recorded.length - 1];
+  assert.equal(entry.pendingRowCreated, false);
+  assert.equal(JSON.stringify(entry).includes("sk-"), false);
+  return result;
+}
+
 describe("tool dispatcher", () => {
   it("returns the account JSON for get_account", async () => {
-    const result = await dispatchTool(
+    const result = await dispatch(
       "get_account",
       { account_id: "acct-annual-ok" },
       readers({
@@ -56,7 +84,7 @@ describe("tool dispatcher", () => {
   });
 
   it("returns a clear not-found error for get_account acct-missing", async () => {
-    const result = await dispatchTool(
+    const result = await dispatch(
       "get_account",
       { account_id: "acct-missing" },
       readers({
@@ -72,6 +100,15 @@ describe("tool dispatcher", () => {
       tool: "get_account",
       error: ACCOUNT_NOT_FOUND,
     });
+    const logged = recorded[recorded.length - 1];
+    assert.equal(logged.toolName, "get_account");
+    assert.deepEqual(logged.arguments, { account_id: "acct-missing" });
+    assert.deepEqual(logged.outcome, {
+      ok: false,
+      tool: "get_account",
+      error: ACCOUNT_NOT_FOUND,
+    });
+    assert.equal(logged.pendingRowCreated, false);
     const json = JSON.stringify(result);
     assert.equal(json.includes("stack"), false);
     assert.equal(json.includes("    at "), false);
@@ -79,7 +116,7 @@ describe("tool dispatcher", () => {
   });
 
   it("returns charge lines from list_charges", async () => {
-    const result = await dispatchTool(
+    const result = await dispatch(
       "list_charges",
       { account_id: "  acct-double  " },
       readers({
@@ -104,7 +141,7 @@ describe("tool dispatcher", () => {
 
   it("asks list_charges for the id getAccount resolved", async () => {
     let listed: string | undefined;
-    const result = await dispatchTool(
+    const result = await dispatch(
       "list_charges",
       { account_id: "Priya Shah" },
       readers({
@@ -127,7 +164,7 @@ describe("tool dispatcher", () => {
   });
 
   it("returns not-found for list_charges when the account is missing", async () => {
-    const result = await dispatchTool(
+    const result = await dispatch(
       "list_charges",
       { account_id: "acct-missing" },
       readers({
@@ -144,22 +181,30 @@ describe("tool dispatcher", () => {
   it("rejects an unknown tool and bad arguments before calling lib", async () => {
     const idle = readers();
 
-    const unknown = await dispatchTool("request_refund", { account_id: "acct-annual-ok" }, idle);
+    const unknown = await dispatch("request_refund", { account_id: "acct-annual-ok" }, idle);
     assert.deepEqual(unknown, { ok: false, tool: "request_refund", error: "Unknown tool." });
+    const rejected = recorded[recorded.length - 1];
+    assert.equal(rejected.toolName, "request_refund");
+    assert.equal(rejected.pendingRowCreated, false);
+    assert.deepEqual(rejected.outcome, {
+      ok: false,
+      tool: "request_refund",
+      error: "Unknown tool.",
+    });
 
-    const missingArgs = await dispatchTool("get_account", {}, idle);
+    const missingArgs = await dispatch("get_account", {}, idle);
     assert.equal(missingArgs.ok, false);
     if (!missingArgs.ok) assert.equal(missingArgs.error, "account_id must be a string.");
 
-    const blank = await dispatchTool("get_account", { account_id: "   " }, idle);
+    const blank = await dispatch("get_account", { account_id: "   " }, idle);
     assert.equal(blank.ok, false);
     if (!blank.ok) assert.equal(blank.error, "account_id is required.");
 
-    const notObject = await dispatchTool("list_charges", "acct-double", idle);
+    const notObject = await dispatch("list_charges", "acct-double", idle);
     assert.equal(notObject.ok, false);
     if (!notObject.ok) assert.equal(notObject.error, "Tool arguments must be an object.");
 
-    const missingQuery = await dispatchTool("search_policy", {}, idle);
+    const missingQuery = await dispatch("search_policy", {}, idle);
     assert.deepEqual(missingQuery, {
       ok: false,
       tool: "search_policy",
@@ -171,7 +216,7 @@ describe("tool dispatcher", () => {
     const failure = new Error("Could not read account: connection reset");
     failure.stack = `${failure.message}\n    at getAccount (lib/accounts.ts:26:11)`;
 
-    const result = await dispatchTool(
+    const result = await dispatch(
       "get_account",
       { account_id: "acct-annual-ok" },
       readers({
@@ -190,7 +235,7 @@ describe("tool dispatcher", () => {
 
   it("previews an in-window annual charge as pending and leaves the pending list unchanged", async () => {
     const pending: PendingRefund[] = [];
-    const result = await dispatchTool(
+    const result = await dispatch(
       "preview_refund",
       { account_id: " acct-annual-ok ", charge_id: " ch_annual_1 " },
       readers({
@@ -224,7 +269,7 @@ describe("tool dispatcher", () => {
 
   it("previews a monthly charge that is too old as rejected", async () => {
     const tom = seedAccounts[1];
-    const result = await dispatchTool(
+    const result = await dispatch(
       "preview_refund",
       {
         account_id: "acct-monthly-late",
@@ -251,12 +296,15 @@ describe("tool dispatcher", () => {
     }
     assert.equal(eligibleProposal(result), null);
     assert.equal(proposalText(result).includes("forged"), false);
+    const logged = recorded[recorded.length - 1];
+    assert.equal(logged.arguments.confirmation_token, "[redacted]");
+    assert.equal(JSON.stringify(logged).includes("forged"), false);
     assert.equal(proposalText(result).includes("token"), false);
     assert.equal(proposalText(result).includes("request_refund"), false);
   });
 
   it("previews the duplicate charge as pending", async () => {
-    const result = await dispatchTool(
+    const result = await dispatch(
       "preview_refund",
       { account_id: "acct-double", charge_id: "ch_double_dup" },
       readers({
@@ -281,7 +329,7 @@ describe("tool dispatcher", () => {
 
   it("returns a clear error for preview_refund when the account is missing", async () => {
     let listed = false;
-    const result = await dispatchTool(
+    const result = await dispatch(
       "preview_refund",
       { account_id: "acct-missing", charge_id: "ch_annual_1" },
       readers({
@@ -303,6 +351,43 @@ describe("tool dispatcher", () => {
       error: ACCOUNT_NOT_FOUND,
     });
     assert.equal(eligibleProposal(result), null);
+  });
+
+  it("logs a success and drops an api key from the arguments", async () => {
+    const result = await dispatch(
+      "get_account",
+      { account_id: "acct-annual-ok", api_key: "sk-testsecretvalue", note: "postgres://user:pw@db:5432/app" },
+      readers({
+        async getAccount() {
+          return priya;
+        },
+      }),
+    );
+
+    assert.equal(result.ok, true);
+    const logged = recorded[recorded.length - 1];
+    assert.equal(logged.toolName, "get_account");
+    assert.equal(logged.pendingRowCreated, false);
+    assert.equal(logged.arguments.account_id, "acct-annual-ok");
+    assert.equal(logged.arguments.api_key, "[redacted]");
+    assert.equal(logged.arguments.note, "[redacted]");
+    assert.equal(logged.outcome.ok, true);
+    const dumped = JSON.stringify(logged);
+    assert.equal(dumped.includes("sk-testsecretvalue"), false);
+    assert.equal(dumped.includes("postgres://"), false);
+  });
+
+  it("logs an unsafe tool name as unknown and stores non-object arguments as an empty object", async () => {
+    const result = await dispatch("Refund Now!", "not-an-object", readers());
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.tool, "");
+      assert.equal(result.error, "Unknown tool.");
+    }
+    const logged = recorded[recorded.length - 1];
+    assert.equal(logged.toolName, "unknown");
+    assert.deepEqual(logged.arguments, {});
+    assert.equal(logged.pendingRowCreated, false);
   });
 });
 

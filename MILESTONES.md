@@ -114,7 +114,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M18b     | **Done**    |
 | M19      | **Done**    |
 | M20      | **Done**    |
-| M21–M26  | Not started |
+| M21      | **Done**    |
+| M22–M26  | Not started |
 
 ---
 
@@ -603,6 +604,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** A billing dashboard.
 
+**Done:** `dispatchTool` writes one `audit_logs` row for every call: tool name, arguments, outcome, and `pending_row_created`. Successes and failures are both logged. Stored arguments omit API keys and raw secrets. `request_refund` is still not a model tool, and confirm still goes through the human confirm route. A `request_refund` call is logged as “Unknown tool.” with `pending_row_created` false, and no pending row is inserted. Looking up `acct-missing` called `get_account`. The agent received “No account with that id.” and replied “There is no account with the ID acct-missing.” That audit row stored the same error and `pending_row_created` false. `pending_refunds` stayed at 6 rows, 1 pending. No billing dashboard.
+
 ---
 
 ### M22 — Token usage for each chat turn
@@ -696,4 +699,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M21”**. M21 writes one audit row for every tool call. The table from M20 starts empty.
+Say **“Start M22”**. M22 stores the prompt, completion, and total tokens for one chat turn.
