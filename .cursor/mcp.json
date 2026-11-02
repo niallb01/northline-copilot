@@ -2,10 +2,7 @@
   "mcpServers": {
     "northline": {
       "command": "node",
-      "args": ["/Users/niallbennett/Desktop/northline-copilot/mcp/server.js"],
-      "env": {
-        "NODE_ENV": "development"
-      }
+      "args": ["/Users/niallbennett/Desktop/northline-copilot/mcp/server.js"]
     }
   }
 }

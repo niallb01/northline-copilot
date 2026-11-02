@@ -4,7 +4,7 @@ A reference implementation of a **billing support workspace** for Northline, a f
 
 ## Overview
 
-Northline Copilot is designed as a **two-panel workspace**: conversational investigation on one side and structured account context (charges, policy citations, pending queue) on the other. A language model assists with lookup and explanation; **refund eligibility is enforced in TypeScript** (`lib/refundRules.ts`), not by the model, SQL, or static prompt text. Writes to the pending queue require explicit human confirmation in the web flow (and equivalent confirmation in the planned MCP interface).
+Northline Copilot is designed as a **two-panel workspace**: conversational investigation on one side and structured account context (charges, policy citations, pending queue) on the other. A language model assists with lookup and explanation; **refund eligibility is enforced in TypeScript** (`lib/refundRules.ts`), not by the model, SQL, or static prompt text. Writes to the pending queue require explicit human confirmation: the website confirm button, or an MCP form that the human fills with that exact account id and charge id.
 
 **Target stack:** Next.js (App Router), Supabase Postgres, pgvector for policy retrieval, OpenAI invoked server-side only, a shared tool layer consumed by both the web app and an MCP stdio server, deployed on Vercel and Supabase.
 
@@ -20,11 +20,13 @@ One sample chat turn, “What is 2 + 2?”, stored the OpenAI usage for that res
 
 ## MCP (local)
 
-`get_account` and `list_charges` are also available from a local stdio server, `mcp/server.js`. The handlers call `dispatchTool` in `lib/`, the same function the website uses. The server does not read the website session cookie, and it does not queue a refund.
+`get_account`, `list_charges`, `search_policy`, and `preview_refund` are available from a local stdio server, `mcp/server.js`. Those handlers call `dispatchTool` in `lib/`, the same function the website uses. `preview_refund` and `search_policy` do not insert a pending row.
 
-Run `npm install` first. The process reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `DATABASE_URL` from the repo `.env`.
+`request_refund` is registered because the MCP SDK can ask the human to confirm a write (`Server.elicitInput`, form mode). The handler ignores any confirmation field on the model arguments. It calls `queueRefund` only after the human accepts and the account id and charge id they submit match that call. Decline, a mismatch, or a client that cannot show the form inserts nothing. Refunds are not queued from the model alone. The server does not read the website session cookie.
 
-The MCP server is **not** called from the browser. Cursor starts it over stdio when you chat here. With `NODE_ENV=development` (set in `.cursor/mcp.json`), tool calls log as `[northline-mcp]` on **stderr** — open **Cursor → Output → MCP** (or the northline MCP channel) to see them. The website uses `POST /api/tools` instead: in dev, the browser console shows `POST /api/tools send/reply` and the `next dev` terminal shows `POST /api/tools received/returned` for the same `dispatchTool` path.
+Run `npm install` first. The process reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `OPENAI_API_KEY` from the repo `.env`.
+
+The MCP server is **not** called from the browser; Cursor starts it over stdio when the agent uses northline tools. The website uses `POST /api/tools` and `POST /api/chat` with the same `dispatchTool` path in `lib/`.
 
 Cursor MCP config (`.cursor/mcp.json`):
 

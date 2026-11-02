@@ -117,7 +117,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M21      | **Done**    |
 | M22      | **Done**    |
 | M23      | **Done**    |
-| M24–M26  | Not started |
+| M24      | **Done**    |
+| M25–M26  | Not started |
 
 ---
 
@@ -652,6 +653,8 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 **You should understand:** Two interfaces, one rule set, one transaction. A model argument is not approval.
 
+**Done:** The MCP SDK can ask the human to confirm a write. `@modelcontextprotocol/sdk` 1.32.2 exposes `Server.elicitInput` (form mode, `elicitation/create`). `mcp/server.js` registers `search_policy` and `preview_refund` and calls `dispatchTool` in `lib/`. It registers `request_refund` because that method exists. The handler ignores a confirmation field on the model arguments. It calls `queueRefund` only after the human accepts and the account id and charge id they submit match that call. Decline, a mismatch, or a client that cannot show the form inserts nothing. Previewing `acct-monthly-late` / `ch_monthly_1` rejected it: the monthly charge is 52 days old, past the 14-day window. That call included `confirmed: true` and wrote nothing. `acct-annual-ok` / `ch_annual_1` would be pending (22 days, within 30). Declining the form for that charge, again with `confirmed: true` on the model arguments, left the table unchanged. Accepting the form with a different charge id also inserted nothing. `search_policy` for “annual refund window” returned `refunds` / `refunds-annual-plans`. `pending_refunds` stayed at 6 rows, 1 pending. No row for `acct-monthly-late`.
+
 ---
 
 ## Phase H — Full scorecard
@@ -705,4 +708,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M24”**. M24 adds `search_policy` and a human-confirmed write on the same local MCP server.
+Say **“Start M25”**. M25 is the full eval scorecard.
