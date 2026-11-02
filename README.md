@@ -14,6 +14,10 @@ This workspace slice is deployed at https://northline-copilot-5ildndkmr-niallb01
 
 Server environment variable names: `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, `SESSION_SECRET`.
 
+## Token usage
+
+One sample chat turn, “What is 2 + 2?”, stored the OpenAI usage for that response in `chat_token_usage`: 831 prompt tokens, 9 completion tokens, and **840 total tokens**. The stored total matches that usage object.
+
 ## Refund workflow
 
 1. **Read** account and charge data from Postgres (Supabase client for reads).

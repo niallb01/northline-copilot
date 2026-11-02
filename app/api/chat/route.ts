@@ -9,15 +9,17 @@
  * passage. When the preview would be pending, it stores that proposal on an
  * HttpOnly cookie and returns the account id, charge id, and action so the
  * operator can confirm. The JSON body has no confirmation token. Without the
- * session cookie it returns 401 and no reply. The API key and the system prompt
- * stay on the server. This route does not store the thread or write a pending
- * row.
+ * session cookie it returns 401 and no reply. When the provider response includes
+ * usage, it stores that turn's prompt, completion, and total tokens. The API key
+ * and the system prompt stay on the server. This route does not store the
+ * message text or write a pending row.
  */
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { completeChatTurn, readChatRequest } from "../../../lib/chat";
 import { confirmOfferFromProposal } from "../../../lib/confirmOffer";
+import { writeChatTokenUsage } from "../../../lib/tokenUsage";
 import {
   PROPOSAL_COOKIE_NAME,
   proposalCookieOptions,
@@ -64,6 +66,14 @@ export async function POST(request: Request) {
       completion_tokens: result.usage.completionTokens,
       total_tokens: result.usage.totalTokens,
     });
+    try {
+      await writeChatTokenUsage(result.usage);
+    } catch {
+      return Response.json(
+        { error: "Could not record token usage." },
+        { status: 500, headers: NO_STORE },
+      );
+    }
   }
 
   if (process.env.NODE_ENV === "development") {

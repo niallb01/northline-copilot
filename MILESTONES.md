@@ -115,7 +115,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M19      | **Done**    |
 | M20      | **Done**    |
 | M21      | **Done**    |
-| M22–M26  | Not started |
+| M22      | **Done**    |
+| M23–M26  | Not started |
 
 ---
 
@@ -618,6 +619,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** A cost dashboard.
 
+**Done:** `POST /api/chat` still checks the M10b session cookie. When OpenAI returns usage, the route stores that turn’s prompt, completion, and total tokens in `public.chat_token_usage`. The table has no message text and no API key column. Row level security is on and there are no policies, so the Data API cannot read or write it. One chat turn, “What is 2 + 2?”, came back as “2 + 2 equals 4.” The usage object was 831 prompt tokens, 9 completion tokens, and 840 total tokens. The stored row has the same total, 840. No cost dashboard.
+
 ---
 
 ## Phase G — MCP (second client, same rules)
@@ -699,4 +702,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M22”**. M22 stores the prompt, completion, and total tokens for one chat turn.
+Say **“Start M23”**. M23 adds a local MCP server with the same read tools as the website.
