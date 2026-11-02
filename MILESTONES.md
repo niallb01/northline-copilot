@@ -116,7 +116,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M20      | **Done**    |
 | M21      | **Done**    |
 | M22      | **Done**    |
-| M23–M26  | Not started |
+| M23      | **Done**    |
+| M24–M26  | Not started |
 
 ---
 
@@ -635,6 +636,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** Write tools. MCP stays a local process. It does not use the website’s session cookie.
 
+**Done:** `mcp/server.js` is a local stdio MCP server. It registers `get_account` and `list_charges` and calls `dispatchTool` in `lib/`, the same function the website uses. It loads server env from the repo `.env`. It does not read the website session cookie and it does not register a write tool. The README Cursor config is command `node` and args the full path to `mcp/server.js`. Pointed Cursor at that server and asked for `acct-annual-ok`. `get_account` returned Priya Shah, annual plan, account `acct-annual-ok`, and charge `ch_annual_1`. `list_charges` for that account returned `ch_annual_1`. No refund was queued.
+
 ---
 
 ### M24 — MCP: `search_policy` and a human-confirmed write
@@ -702,4 +705,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M23”**. M23 adds a local MCP server with the same read tools as the website.
+Say **“Start M24”**. M24 adds `search_policy` and a human-confirmed write on the same local MCP server.

@@ -18,6 +18,27 @@ Server environment variable names: `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_U
 
 One sample chat turn, “What is 2 + 2?”, stored the OpenAI usage for that response in `chat_token_usage`: 831 prompt tokens, 9 completion tokens, and **840 total tokens**. The stored total matches that usage object.
 
+## MCP (local)
+
+`get_account` and `list_charges` are also available from a local stdio server, `mcp/server.js`. The handlers call `dispatchTool` in `lib/`, the same function the website uses. The server does not read the website session cookie, and it does not queue a refund.
+
+Run `npm install` first. The process reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `DATABASE_URL` from the repo `.env`.
+
+The MCP server is **not** called from the browser. Cursor starts it over stdio when you chat here. With `NODE_ENV=development` (set in `.cursor/mcp.json`), tool calls log as `[northline-mcp]` on **stderr** — open **Cursor → Output → MCP** (or the northline MCP channel) to see them. The website uses `POST /api/tools` instead: in dev, the browser console shows `POST /api/tools send/reply` and the `next dev` terminal shows `POST /api/tools received/returned` for the same `dispatchTool` path.
+
+Cursor MCP config (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "northline": {
+      "command": "node",
+      "args": ["/Users/niallbennett/Desktop/northline-copilot/mcp/server.js"]
+    }
+  }
+}
+```
+
 ## Refund workflow
 
 1. **Read** account and charge data from Postgres (Supabase client for reads).
