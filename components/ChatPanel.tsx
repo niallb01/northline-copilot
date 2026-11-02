@@ -2,17 +2,20 @@
  * Chat panel on the left of the workspace. The operator types a message, the
  * browser POSTs that message plus earlier user and assistant turns to
  * /api/chat, and the transcript shows the message, any get_account,
- * list_charges, preview_refund, or search_policy call with its arguments, and the model's
- * reply. When that reply includes an eligible proposal, it tells the workspace
- * so a person can confirm. The transcript lives in React state on this page.
- * It does not call OpenAI itself, run a tool, decide a refund, store the
- * thread on the server, read the session cookie, or confirm a refund.
+ * list_charges, preview_refund, or search_policy call with its arguments, and
+ * the model's reply. Passages from that turn's search_policy result are handed
+ * to the citations panel. When the reply includes an eligible proposal, it
+ * tells the workspace so a person can confirm. The transcript lives in React
+ * state on this page. It does not call OpenAI itself, run a tool, decide which
+ * quote counts, store the thread on the server, read the session cookie, or
+ * confirm a refund.
  */
 
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
 import type { ConfirmOffer } from "../lib/confirmOffer";
+import type { PolicyCitation, PolicyPassageView } from "../lib/policyCitations";
 import { Panel } from "./Panel";
 import styles from "./ChatPanel.module.css";
 
@@ -27,18 +30,70 @@ type ToolCallView = {
   arguments: unknown;
 };
 
-function readModelReply(
-  value: unknown,
-): { reply: string; toolCalls: ToolCallView[]; policySources: string[] } | null {
+function readModelReply(value: unknown): {
+  reply: string;
+  toolCalls: ToolCallView[];
+  policySources: string[];
+  policyPassages: PolicyPassageView[];
+  citations: PolicyCitation[];
+} | null {
   if (typeof value !== "object" || value === null) return null;
   const reply = (value as { reply?: unknown }).reply;
   if (typeof reply !== "string" || !reply.trim()) return null;
   const rawCalls = (value as { toolCalls?: unknown }).toolCalls;
+  const row = value as { policySources?: unknown; policyPassages?: unknown; citations?: unknown };
   return {
     reply: reply.trim(),
     toolCalls: readToolCalls(rawCalls),
-    policySources: readPolicySources((value as { policySources?: unknown }).policySources),
+    policySources: readPolicySources(row.policySources),
+    policyPassages: readPolicyPassages(row.policyPassages),
+    citations: readCitations(row.citations),
   };
+}
+
+function readPolicyPassages(value: unknown): PolicyPassageView[] {
+  if (!Array.isArray(value)) return [];
+  const passages: PolicyPassageView[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.documentId !== "string" ||
+      typeof row.chunkId !== "string" ||
+      typeof row.path !== "string" ||
+      typeof row.text !== "string"
+    ) {
+      continue;
+    }
+    const documentId = row.documentId.trim();
+    const chunkId = row.chunkId.trim();
+    const path = row.path.trim();
+    if (!documentId || !chunkId || !path || !row.text.trim()) continue;
+    passages.push({ documentId, chunkId, path, text: row.text });
+  }
+  return passages;
+}
+
+function readCitations(value: unknown): PolicyCitation[] {
+  if (!Array.isArray(value)) return [];
+  const citations: PolicyCitation[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.documentId !== "string" ||
+      typeof row.chunkId !== "string" ||
+      typeof row.quote !== "string"
+    ) {
+      continue;
+    }
+    const documentId = row.documentId.trim();
+    const chunkId = row.chunkId.trim();
+    const quote = row.quote.trim();
+    if (!documentId || !chunkId || !quote) continue;
+    citations.push({ documentId, chunkId, quote });
+  }
+  return citations;
 }
 
 function readPolicySources(value: unknown): string[] {
@@ -87,8 +142,10 @@ function formatArguments(value: unknown): string {
 
 export function ChatPanel({
   onConfirmOffer,
+  onPolicyPassages,
 }: {
   onConfirmOffer?: (offer: ConfirmOffer) => void;
+  onPolicyPassages?: (passages: PolicyPassageView[]) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
@@ -166,9 +223,10 @@ export function ChatPanel({
               }
               console.log(`Chat tool called: ${call.name}`, call.arguments);
             }
-            if (reply.policySources.length > 0) {
-              console.log("search_policy sources:", reply.policySources);
+            if (reply.policyPassages.length > 0) {
+              console.log("search_policy passages:", reply.policyPassages);
             }
+            console.log("Accepted policy quotes:", reply.citations);
           } else {
             console.log("Chat tool called: (none this turn)");
           }
@@ -187,6 +245,7 @@ export function ChatPanel({
         appendEntry({ kind: "tool", name: call.name, arguments: call.arguments });
       }
       appendEntry({ kind: "assistant", text: reply.reply });
+      onPolicyPassages?.(reply.policyPassages);
       if (offer) {
         if (process.env.NODE_ENV === "development") {
           console.log("Workspace confirm offer set:", offer);
@@ -212,7 +271,7 @@ export function ChatPanel({
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Ask a question, look up an account, ask for its charges, or ask if a charge would be refundable. The reply comes from the model.
+              Ask a question, look up an account, ask for its charges, ask about a refund window, or ask if a charge would be refundable. The reply comes from the model.
             </p>
           ) : (
             <ol className={styles.list}>

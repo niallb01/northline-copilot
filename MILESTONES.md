@@ -112,7 +112,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M17      | **Done**    |
 | M18a     | **Done**    |
 | M18b     | **Done**    |
-| M19–M26  | Not started |
+| M19      | **Done**    |
+| M20–M26  | Not started |
 
 ---
 
@@ -571,6 +572,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** MCP, the audit table.
 
+**Done:** `search_policy` is on the chat tool loop. The Policy citations panel lists each passage from that turn: document id, chunk id, path, and the stored text. A quote counts only when its document id and chunk id were in that turn’s tool result and the quote is a substring of that same passage. A quote from a different chunk does not count. The similarity cutoff is now 0.45. Known-supported questions scored at least 0.476 (“annual refund window” → `refunds` / `refunds-annual-plans`). Known-unsupported questions scored at most 0.370 (“crypto refund”). Supported questions still return the expected chunk. “crypto refund”, “office snack policy”, and “parental leave policy” return no passage. “What is the annual plan refund window?” cited `refunds` / `refunds-annual-plans`, and the quote was inside that passage. “What is the crypto refund rule?” was refused with “The stored policy does not cover that topic.” and no passage. In that conversation, previewing `acct-annual-ok` / `ch_annual_1` said the charge would be pending and offered confirm. `pending_refunds` stayed at 6 rows, 1 pending. Nothing was confirmed. No audit table and no MCP.
+
 ---
 
 ## Phase F — Observability
@@ -690,4 +693,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M19”**. M19 puts `search_policy` on the chat tool loop and accepts a citation only when it names a passage that tool returned. It also calibrates the M18b cutoff. A refund in that conversation is still only a preview until a person confirms.
+Say **“Start M20”**. M20 adds the `audit_logs` table and nothing else. The table starts empty.

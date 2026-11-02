@@ -1,9 +1,10 @@
 /**
  * Checks the tool dispatcher: get_account and list_charges call the account
  * readers, preview_refund uses the refund rules without appending a pending
- * row, bad arguments are rejected, and a missing account is a plain not-found
- * error. These tests pass in stand-in readers. They do not open a database,
- * call OpenAI, or start Next.js.
+ * row, search_policy rejects a missing query before it searches, bad arguments
+ * are rejected, and a missing account is a plain not-found error. These tests
+ * pass in stand-in readers. They do not open a database, call OpenAI, or start
+ * Next.js.
  */
 
 import assert from "node:assert/strict";
@@ -157,6 +158,13 @@ describe("tool dispatcher", () => {
     const notObject = await dispatchTool("list_charges", "acct-double", idle);
     assert.equal(notObject.ok, false);
     if (!notObject.ok) assert.equal(notObject.error, "Tool arguments must be an object.");
+
+    const missingQuery = await dispatchTool("search_policy", {}, idle);
+    assert.deepEqual(missingQuery, {
+      ok: false,
+      tool: "search_policy",
+      error: "query must be a string.",
+    });
   });
 
   it("keeps a thrown lookup as a one-line error with no stack", async () => {

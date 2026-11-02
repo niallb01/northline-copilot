@@ -3,12 +3,15 @@
  * prior user and assistant turns, caps that history, and asks OpenAI for a
  * completion. If the model requests get_account, list_charges, search_policy, or
  * preview_refund, the server runs that tool and returns the model's final
- * sentence plus the tool name and arguments. When the preview would be
- * pending, it stores that proposal on an HttpOnly cookie and returns the
- * account id, charge id, and action so the operator can confirm. The JSON
- * body has no confirmation token. Without the session cookie it returns 401
- * and no reply. The API key and the system prompt stay on the server. This
- * route does not search policy, store the thread, or write a pending row.
+ * sentence plus the tool name and arguments. search_policy passages are
+ * returned for the citations panel. A quote is included only when its document
+ * id and chunk id were in that turn's tool result and the quote is inside that
+ * passage. When the preview would be pending, it stores that proposal on an
+ * HttpOnly cookie and returns the account id, charge id, and action so the
+ * operator can confirm. The JSON body has no confirmation token. Without the
+ * session cookie it returns 401 and no reply. The API key and the system prompt
+ * stay on the server. This route does not store the thread or write a pending
+ * row.
  */
 
 import { cookies } from "next/headers";
@@ -79,10 +82,20 @@ export async function POST(request: Request) {
           arguments: call.arguments,
         })),
         policySources: result.policySources,
+        policyPassages: result.policyPassages,
+        citations: result.citations,
       });
-      if (result.policySources.length > 0) {
-        console.log("POST /api/chat search_policy sources:", result.policySources);
+      if (result.policyPassages.length > 0) {
+        console.log(
+          "POST /api/chat search_policy passages:",
+          result.policyPassages.map((passage) => ({
+            documentId: passage.documentId,
+            chunkId: passage.chunkId,
+            path: passage.path,
+          })),
+        );
       }
+      console.log("POST /api/chat citations accepted:", result.citations);
     } else {
       console.log("POST /api/chat response:", {
         status: result.status,
@@ -104,17 +117,15 @@ export async function POST(request: Request) {
 
   const offer = confirmOfferFromProposal(result.proposal);
   const signed = offer ? signProposal(offer) : null;
-  const response = NextResponse.json(
-    signed && offer
-      ? {
-          reply: result.reply,
-          toolCalls: result.toolCalls,
-          policySources: result.policySources,
-          proposal: offer,
-        }
-      : { reply: result.reply, toolCalls: result.toolCalls, policySources: result.policySources },
-    { status: 200, headers: NO_STORE },
-  );
+  const body = {
+    reply: result.reply,
+    toolCalls: result.toolCalls,
+    policySources: result.policySources,
+    policyPassages: result.policyPassages,
+    citations: result.citations,
+    ...(signed && offer ? { proposal: offer } : {}),
+  };
+  const response = NextResponse.json(body, { status: 200, headers: NO_STORE });
   if (signed && offer) {
     response.cookies.set(PROPOSAL_COOKIE_NAME, signed.token, proposalCookieOptions());
     if (process.env.NODE_ENV === "development") {

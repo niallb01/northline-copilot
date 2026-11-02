@@ -1,0 +1,59 @@
+.panelContent {
+  padding: 0.75rem 1.125rem 1.125rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  padding: 0.75rem;
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+}
+
+.meta,
+.path,
+.text,
+.message {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.meta,
+.path {
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.path {
+  margin-top: 0.2rem;
+}
+
+.label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+.text {
+  margin-top: 0.55rem;
+  font-size: 0.8125rem;
+  color: #111827;
+  white-space: pre-wrap;
+}
+
+.message {
+  font-size: 0.875rem;
+  color: #6b7280;
+}

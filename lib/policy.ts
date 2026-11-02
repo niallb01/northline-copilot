@@ -1,8 +1,8 @@
 /**
  * Finds stored Northline policy passages by vector similarity. searchPolicy embeds
  * the question with the same model used for the chunk text, then returns nearest
- * rows from policy_chunks whose cosine similarity meets a starting cutoff: document
- * id, chunk id, source title, and the passage exactly as stored. Below that cutoff
+ * rows from policy_chunks whose cosine similarity meets the cutoff: document id,
+ * chunk id, source title, and the passage exactly as stored. Below that cutoff
  * the passage list is empty and the message says the policy does not contain this.
  * The cutoff does not prove relevance, invent a passage, or decide a refund.
  * embedPolicyChunks fills the embedding column from each stored passage. Neither
@@ -22,11 +22,12 @@ const DEFAULT_MATCH_COUNT = 5;
 
 /**
  * Minimum cosine similarity (1 minus cosine distance) for a stored passage to count.
- * Starting heuristic only: the annual-refund passage sits above it, and an
- * uncovered question such as a crypto refund sits below it. M19 and M25
- * calibrate it. It does not prove that a passage answers the question.
+ * Calibrated in M19 on text-embedding-3-small. Known-supported questions scored at
+ * least 0.476 ("annual refund window" → refunds / refunds-annual-plans). Known-unsupported
+ * questions scored at most 0.370 ("crypto refund"). 0.45 sits in that gap. It does
+ * not prove that a passage answers the question. M25 checks the same split again.
  */
-export const SIMILARITY_CUTOFF = 0.4;
+export const SIMILARITY_CUTOFF = 0.45;
 
 /** Used only when every passage is below SIMILARITY_CUTOFF. */
 export const POLICY_MISS_MESSAGE = "The policy does not contain this.";

@@ -2,17 +2,26 @@
  * Asks OpenAI for a chat completion. When the model requests get_account,
  * list_charges, preview_refund, or search_policy, this file runs that tool
  * through the dispatcher and sends the result back so the model can write the
- * final sentence. An eligible preview is returned separately as a proposal
- * for the route to store on the HttpOnly session. That proposal is not part of
- * the tool result. The caller may pass earlier user and assistant turns; those
- * are checked and capped. The system prompt is added here and is never taken
- * from the caller. When the provider response includes usage, those token
- * counts are returned so the route can record them. The key is read from
+ * final sentence. A policy quote counts only when its document id and chunk id
+ * were in that turn's search_policy result and the quote is inside that passage.
+ * When that search returns no passage, the reply is a refusal and no quote is
+ * kept. An eligible preview is returned separately as a proposal for the route
+ * to store on the HttpOnly session. That proposal is not part of the tool
+ * result. The caller may pass earlier user and assistant turns; those are
+ * checked and capped. The system prompt is added here and is never taken from
+ * the caller. When the provider response includes usage, those token counts
+ * are returned so the route can record them. The key is read from
  * OPENAI_API_KEY and is never returned. This file does not store the thread,
  * insert a pending row, or offer request_refund as a tool.
  */
 
-import { collectPolicySourcePaths, type PolicyPassage } from "./policy";
+import { collectPolicySourcePaths, formatPolicySourcePath, type PolicyPassage } from "./policy";
+import {
+  POLICY_REFUSAL,
+  settlePolicyCitations,
+  type PolicyCitation,
+  type PolicyPassageView,
+} from "./policyCitations";
 import { dispatchTool, eligibleProposal, type EligibleProposal, type ToolResult } from "./tools";
 
 const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
@@ -21,7 +30,7 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic and do not invent a rule. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies an exact contiguous span of the passage that answers the question: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
 
 /** Tools this chat loop may run. None of them insert a pending row. */
 const CHAT_TOOLS = [
@@ -178,8 +187,12 @@ export type ChatTurnResult =
       reply: string;
       usage: TokenUsage | null;
       toolCalls: ChatToolCall[];
-      /** Paths from search_policy passages; for logs and the citations panel, not the reply text. */
+      /** Paths from search_policy passages; for logs, not the reply text. */
       policySources: string[];
+      /** Passages from this turn's search_policy result, for the citations panel. */
+      policyPassages: PolicyPassageView[];
+      /** Quotes that named a passage in that result and sit inside it. */
+      citations: PolicyCitation[];
       proposal: EligibleProposal | null;
     }
   | {
@@ -219,6 +232,29 @@ export function previewRefundIntent(
   return { account_id: account, charge_id: charge };
 }
 
+/** When the operator asks about stored policy and is not previewing a charge, search before the reply. */
+export function policySearchIntent(message: string): { query: string } | null {
+  if (previewRefundIntent(message)) return null;
+  const text = message.trim();
+  if (!text) return null;
+
+  const lower = text.toLowerCase();
+  const asksAboutStoredRules =
+    /\bpolic(?:y|ies)\b/.test(lower) ||
+    /\brefund window\b/.test(lower) ||
+    /\brefund rule\b/.test(lower) ||
+    /\bbilling\b/.test(lower) ||
+    /\bescalat/.test(lower) ||
+    /\bsla\b/.test(lower) ||
+    /\buptime\b/.test(lower) ||
+    /\bgrace period\b/.test(lower) ||
+    (/\brefunds?\b/.test(lower) &&
+      /\b(what|how|does|rule|policy|window|cover)\b/.test(lower));
+  if (!asksAboutStoredRules) return null;
+
+  return { query: text.slice(0, 500) };
+}
+
 export async function completeChatTurn(
   message: string,
   history: readonly ChatTurn[] = [],
@@ -233,6 +269,11 @@ export async function completeChatTurn(
   const forcedPreview = previewRefundIntent(message);
   if (forcedPreview) {
     return completePreviewRefundTurn(message, history, forcedPreview, client, apiKey, runTool);
+  }
+
+  const forcedPolicy = policySearchIntent(message);
+  if (forcedPolicy) {
+    return completePolicySearchTurn(message, history, forcedPolicy, client, apiKey, runTool);
   }
 
   const messages: ProviderMessage[] = [
@@ -257,12 +298,15 @@ export async function completeChatTurn(
     if (!reply) {
       return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
     }
+    const checked = checkedPolicyReply(reply, []);
     return {
       ok: true,
-      reply,
+      reply: checked.reply,
       usage: readUsage(first.payload),
       toolCalls: [],
       policySources: [],
+      policyPassages: [],
+      citations: checked.citations,
       proposal: null,
     };
   }
@@ -273,6 +317,7 @@ export async function completeChatTurn(
   const usedCallIds = new Set<string>();
   let proposal: EligibleProposal | null = null;
   const policyPassages: PolicyPassage[] = [];
+  let policySearched = false;
 
   for (const [index, call] of requested.entries()) {
     const id = safeCallId(call.id, index, usedCallIds);
@@ -294,12 +339,35 @@ export async function completeChatTurn(
       const ran = await runChatTool(runTool, name, parsed.value, apiKey);
       content = ran.content;
       if (ran.proposal) proposal = ran.proposal;
+      if (ran.policySearched) policySearched = true;
       if (ran.policyPassages.length > 0) {
         policyPassages.push(...ran.policyPassages);
       }
     }
 
     toolMessages.push({ role: "tool", tool_call_id: id, content });
+  }
+
+  if (
+    policySearched &&
+    policyPassages.length === 0 &&
+    toolCalls.every((call) => call.name === "search_policy")
+  ) {
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat policy citation check:", {
+        accepted: [],
+        rejected: [],
+        refusal: POLICY_REFUSAL,
+      });
+    }
+    return {
+      ok: true,
+      reply: POLICY_REFUSAL,
+      usage: readUsage(first.payload),
+      toolCalls,
+      ...emptyPolicyFields(),
+      proposal,
+    };
   }
 
   const followUp = await requestCompletion(client, apiKey, {
@@ -320,12 +388,15 @@ export async function completeChatTurn(
     return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
   }
 
+  const checked = checkedPolicyReply(reply, policyPassages);
   return {
     ok: true,
-    reply,
+    reply: checked.reply,
     usage: addUsage(readUsage(first.payload), readUsage(followUp.payload)),
     toolCalls,
-    policySources: collectPolicySourcePaths(policyPassages),
+    policySources: checked.policySources,
+    policyPassages: checked.policyPassages,
+    citations: checked.citations,
     proposal,
   };
 }
@@ -382,13 +453,96 @@ async function completePreviewRefundTurn(
     return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
   }
 
+  const checked = checkedPolicyReply(reply, []);
   return {
     ok: true,
-    reply,
+    reply: checked.reply,
     usage: readUsage(followUp.payload),
     toolCalls,
-    policySources: [],
+    ...emptyPolicyFields(),
+    citations: checked.citations,
     proposal: ran.proposal,
+  };
+}
+
+async function completePolicySearchTurn(
+  message: string,
+  history: readonly ChatTurn[],
+  args: { query: string },
+  client: ChatCompletionClient,
+  apiKey: string,
+  runTool: ChatToolRunner,
+): Promise<ChatTurnResult> {
+  if (process.env.NODE_ENV === "development") {
+    console.log("POST /api/chat search_policy forced from message:", args);
+  }
+
+  const messages: ProviderMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    })),
+    { role: "user", content: message },
+  ];
+
+  const toolCalls: ChatToolCall[] = [{ name: "search_policy", arguments: { query: args.query } }];
+  const callId = "call_policy";
+  const argumentsJson = JSON.stringify(args);
+  const ran = await runChatTool(runTool, "search_policy", args, apiKey);
+
+  if (ran.policySearched && ran.policyPassages.length === 0) {
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat policy citation check:", {
+        accepted: [],
+        rejected: [],
+        refusal: POLICY_REFUSAL,
+      });
+    }
+    return {
+      ok: true,
+      reply: POLICY_REFUSAL,
+      usage: null,
+      toolCalls,
+      ...emptyPolicyFields(),
+      proposal: null,
+    };
+  }
+
+  const followUp = await requestCompletion(client, apiKey, {
+    messages: [
+      ...messages,
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: callId,
+            type: "function",
+            function: { name: "search_policy", arguments: argumentsJson },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: callId, content: ran.content },
+    ],
+  });
+  if (!followUp.ok) return followUp;
+
+  const reply = redact(readReply(followUp.payload) ?? "", apiKey).trim();
+  if (!reply) {
+    return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
+  }
+
+  const checked = checkedPolicyReply(reply, ran.policyPassages);
+  return {
+    ok: true,
+    reply: checked.reply,
+    usage: readUsage(followUp.payload),
+    toolCalls,
+    policySources: checked.policySources,
+    policyPassages: checked.policyPassages,
+    citations: checked.citations,
+    proposal: null,
   };
 }
 
@@ -517,6 +671,58 @@ function parseToolArguments(
   }
 }
 
+function emptyPolicyFields(): {
+  policySources: string[];
+  policyPassages: PolicyPassageView[];
+  citations: PolicyCitation[];
+} {
+  return { policySources: [], policyPassages: [], citations: [] };
+}
+
+function checkedPolicyReply(
+  rawReply: string,
+  passages: readonly PolicyPassage[],
+): {
+  reply: string;
+  policySources: string[];
+  policyPassages: PolicyPassageView[];
+  citations: PolicyCitation[];
+} {
+  const settled = settlePolicyCitations(rawReply, passages);
+  if (
+    process.env.NODE_ENV === "development" &&
+    (passages.length > 0 || settled.citations.length > 0 || settled.rejected.length > 0)
+  ) {
+    console.log("POST /api/chat policy citation check:", {
+      accepted: settled.citations,
+      rejected: settled.rejected,
+    });
+  }
+  return {
+    reply: settled.reply,
+    policySources: collectPolicySourcePaths(passages),
+    policyPassages: toPolicyPassageViews(passages),
+    citations: settled.citations,
+  };
+}
+
+function toPolicyPassageViews(passages: readonly PolicyPassage[]): PolicyPassageView[] {
+  const seen = new Set<string>();
+  const views: PolicyPassageView[] = [];
+  for (const passage of passages) {
+    const key = `${passage.documentId}\0${passage.chunkId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    views.push({
+      documentId: passage.documentId,
+      chunkId: passage.chunkId,
+      path: formatPolicySourcePath(passage.documentId, passage.chunkId),
+      text: passage.passage,
+    });
+  }
+  return views;
+}
+
 async function runChatTool(
   runTool: ChatToolRunner,
   name: string,
@@ -525,6 +731,7 @@ async function runChatTool(
 ): Promise<{
   content: string;
   proposal: EligibleProposal | null;
+  policySearched: boolean;
   policyPassages: PolicyPassage[];
 }> {
   if (process.env.NODE_ENV === "development") {
@@ -538,13 +745,22 @@ async function runChatTool(
     result = { ok: false, tool: name, error: `Could not run ${name}.` };
   }
 
-  const content = redact(JSON.stringify(result), apiKey).slice(0, 8000);
+  let policySearched = false;
+  let policyPassages: PolicyPassage[] = [];
+  if (result.ok && result.tool === "search_policy") {
+    policySearched = true;
+    policyPassages = result.result.passages;
+  }
+  let content = redact(JSON.stringify(result), apiKey);
+  if (policyPassages.length > 0) {
+    content +=
+      '\nQuote one exact contiguous span from one passage with <cite document="DOCUMENT_ID" chunk="CHUNK_ID">exact words</cite> using that passage\'s documentId and chunkId. Do not add quotation marks around the words.';
+  }
+  content = content.slice(0, 8000);
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat tool result from lib/:", content);
   }
-  const policyPassages =
-    result.ok && result.tool === "search_policy" ? result.result.passages : [];
-  return { content, proposal: eligibleProposal(result), policyPassages };
+  return { content, proposal: eligibleProposal(result), policySearched, policyPassages };
 }
 
 function safeCallId(id: string, index: number, used: Set<string>): string {

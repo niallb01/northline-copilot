@@ -1,12 +1,12 @@
 /**
  * Checks one chat completion: prior user and assistant turns go out with the
- * new message, that history is capped, get_account, list_charges, and
- * preview_refund are the only registered tools, a tool result is sent back
- * before the final sentence, an eligible preview is returned as a proposal
- * outside that result, token usage is kept when the provider sends it, and
- * the API key is never returned. These tests pass a stand-in fetch and a
- * stand-in tool runner. They do not call OpenAI, open a database, or start
- * Next.js.
+ * new message, that history is capped, get_account, list_charges,
+ * preview_refund, and search_policy are the registered tools, a tool result is
+ * sent back before the final sentence, a policy quote counts only against that
+ * turn's passages, an eligible preview is returned as a proposal outside that
+ * result, token usage is kept when the provider sends it, and the API key is
+ * never returned. These tests pass a stand-in fetch and a stand-in tool
+ * runner. They do not call OpenAI, open a database, or start Next.js.
  */
 
 import assert from "node:assert/strict";
@@ -16,6 +16,7 @@ import {
   DEFAULT_CHAT_MODEL,
   MAX_HISTORY_TURNS,
   MAX_MESSAGE_LENGTH,
+  policySearchIntent,
   previewRefundIntent,
   readChatRequest,
   type ChatCompletionClient,
@@ -132,6 +133,8 @@ describe("completeChatTurn", () => {
       usage: null,
       toolCalls: [],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -193,6 +196,8 @@ describe("completeChatTurn", () => {
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       toolCalls: [],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -339,6 +344,8 @@ describe("completeChatTurn", () => {
       usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
       toolCalls: [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -427,6 +434,8 @@ describe("completeChatTurn", () => {
       usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
       toolCalls: [{ name: "list_charges", arguments: { account_id: "acct-double" } }],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -468,6 +477,8 @@ describe("completeChatTurn", () => {
         { name: "preview_refund", arguments: { account_id: "acct-missing", charge_id: "ch_nope" } },
       ],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -525,6 +536,8 @@ describe("completeChatTurn", () => {
         },
       ],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: {
         accountId: "acct-annual-ok",
         chargeId: "ch_annual_1",
@@ -617,6 +630,8 @@ describe("completeChatTurn", () => {
       usage: null,
       toolCalls: [{ name: "get_account", arguments: "{not json" }],
       policySources: [],
+      policyPassages: [],
+      citations: [],
       proposal: null,
     });
   });
@@ -650,6 +665,131 @@ describe("completeChatTurn", () => {
     if (!result.ok) return;
     assert.equal(result.reply, "The key is [redacted]");
     assert.equal(JSON.stringify(result).includes(API_KEY), false);
+  });
+
+  it("accepts a quote only when it is inside the passage search_policy returned", async () => {
+    const annual =
+      "An annual plan can be refunded in full when the request arrives within 30 days of the charge.";
+    let fetchCalls = 0;
+    const result = await completeChatTurn(
+      "What is the annual plan refund window?",
+      [],
+      client(async (_url, init) => {
+        fetchCalls += 1;
+        const body = JSON.parse(String(init?.body)) as { tools?: unknown; messages?: Array<{ content?: string }> };
+        assert.equal("tools" in body, false);
+        assert.match(body.messages?.at(-1)?.content ?? "", /refunds-annual-plans/);
+        assert.match(body.messages?.at(-1)?.content ?? "", /<cite/);
+        return jsonResponse(200, {
+          choices: [
+            {
+              message: {
+                content:
+                  `<cite document="refunds" chunk="refunds-annual-plans">${annual}</cite> <cite document="refunds" chunk="refunds-annual-plans">within 14 days of that charge</cite>`,
+              },
+            },
+          ],
+          usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+        });
+      }),
+      async (name, args) => {
+        assert.equal(name, "search_policy");
+        assert.equal((args as { query: string }).query, "What is the annual plan refund window?");
+        return {
+          ok: true,
+          tool: "search_policy",
+          result: {
+            passages: [
+              {
+                documentId: "refunds",
+                chunkId: "refunds-annual-plans",
+                sourceTitle: "Refunds",
+                passage: annual,
+              },
+            ],
+            message: null,
+          },
+        };
+      },
+    );
+
+    assert.equal(fetchCalls, 1);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.citations, [
+      {
+        documentId: "refunds",
+        chunkId: "refunds-annual-plans",
+        quote: annual,
+      },
+    ]);
+    assert.deepEqual(result.policyPassages, [
+      {
+        documentId: "refunds",
+        chunkId: "refunds-annual-plans",
+        path: "policy-desk/refunds.md#refunds-annual-plans",
+        text: annual,
+      },
+    ]);
+    assert.deepEqual(result.policySources, ["policy-desk/refunds.md#refunds-annual-plans"]);
+    assert.equal(result.reply.includes(annual), true);
+    assert.equal(result.reply.includes("14 days"), false);
+    assert.equal(result.reply.includes("<cite"), false);
+    assert.equal(result.proposal, null);
+  });
+
+  it("refuses when search_policy returns no passage and keeps no invented quote", async () => {
+    let fetchCalls = 0;
+    const result = await completeChatTurn(
+      "What is the crypto refund rule?",
+      [],
+      client(async () => {
+        fetchCalls += 1;
+        return jsonResponse(200, {
+          choices: [{ message: { content: "Crypto refunds are paid within one day." } }],
+        });
+      }),
+      async (name) => {
+        assert.equal(name, "search_policy");
+        return {
+          ok: true,
+          tool: "search_policy",
+          result: { passages: [], message: "The policy does not contain this." },
+        };
+      },
+    );
+
+    assert.equal(fetchCalls, 0);
+    assert.deepEqual(result, {
+      ok: true,
+      reply: "The stored policy does not cover that topic.",
+      usage: null,
+      toolCalls: [{ name: "search_policy", arguments: { query: "What is the crypto refund rule?" } }],
+      policySources: [],
+      policyPassages: [],
+      citations: [],
+      proposal: null,
+    });
+  });
+});
+
+describe("policySearchIntent", () => {
+  it("searches a policy question that is not a refund preview", () => {
+    assert.deepEqual(policySearchIntent("What is the annual plan refund window?"), {
+      query: "What is the annual plan refund window?",
+    });
+    assert.deepEqual(policySearchIntent("What is the crypto refund rule?"), {
+      query: "What is the crypto refund rule?",
+    });
+  });
+
+  it("leaves a charge preview and an account lookup to those tools", () => {
+    assert.equal(
+      policySearchIntent("Would a refund of charge ch_annual_1 on account acct-annual-ok be allowed?"),
+      null,
+    );
+    assert.equal(policySearchIntent("Look up acct-monthly-late."), null);
+    assert.equal(policySearchIntent("Refund the duplicate charge."), null);
   });
 });
 
