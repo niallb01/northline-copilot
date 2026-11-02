@@ -188,25 +188,21 @@ export function AccountContext() {
     setMessage(null);
 
     try {
-      const requestBody = {
-        name: "get_account",
-        arguments: { account_id: trimmed },
-      };
-      if (process.env.NODE_ENV === "development") {
-        console.log("POST /api/tools send:", requestBody);
-      }
       const response = await fetch("/api/tools", {
         method: "POST",
         headers: {
           accept: "application/json",
           "content-type": "application/json",
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          name: "get_account",
+          arguments: { account_id: trimmed },
+        }),
       });
 
       const body: unknown = await response.json();
       if (process.env.NODE_ENV === "development") {
-        console.log("POST /api/tools reply:", { status: response.status, body });
+        console.log("get_account ToolResult (POST /api/tools):", body);
       }
 
       if (response.status === 401) {

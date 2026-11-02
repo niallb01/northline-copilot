@@ -34,19 +34,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (process.env.NODE_ENV === "development") {
-    console.log("POST /api/tools received:", { name: call.name, arguments: call.arguments });
-  }
-
   try {
     const result = await dispatchTool(call.name, call.arguments);
-    if (process.env.NODE_ENV === "development") {
-      console.log("POST /api/tools returned:", {
-        tool: result.tool,
-        ok: result.ok,
-        error: result.ok ? undefined : result.error,
-      });
-    }
     const response = NextResponse.json(result, { status: statusFor(result), headers: NO_STORE });
     const proposal = eligibleProposal(result);
     if (proposal) {
