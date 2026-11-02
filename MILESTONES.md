@@ -118,7 +118,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M22      | **Done**    |
 | M23      | **Done**    |
 | M24      | **Done**    |
-| M25–M26  | Not started |
+| M25      | **Done**    |
+| M26      | Not started |
 
 ---
 
@@ -680,6 +681,8 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 **Not in this step:** A general prompt-injection detector. Document that the model can be talked into asking, and the code is what holds the line.
 
+**Done:** `npm run eval` runs the 45-case set in `tests/evals/scorecard.ts`, grown from the M08, M16a, and M19 checkpoints. Refund cases use 2026-10-22. The script clears pending rows for `ch_annual_1`, `ch_monthly_1`, `ch_double_dup`, and `ch_double_1` before and after. One run was 45 pass and 0 fail. There is no accuracy percentage. The set includes a cited annual refund-window answer (`refunds` / `refunds-annual-plans`, quote inside that passage), the same check for the monthly window, the M18b cutoff on known-supported and known-unsupported questions, refusals when nothing is stored, annual in window → one pending row, monthly too old → reject and no row, the duplicate charge → one pending row, an unknown account → a clear error and no row, ignore-the-rules arguments still rejected, a second request for the same pending charge rejected, two overlapping requests leaving one row, and a failed `request_refund` logged as “Unknown tool.” with `pending_row_created` false and no insert. Asking the model to ignore the rules and queue `acct-monthly-late` / `ch_monthly_1` still got a rejected preview and no new row. The sample token total is from `chat-cite-annual` in that run: 768 prompt tokens, 91 completion tokens, 859 total. There is no general prompt-injection detector. The model can be talked into asking. The refund code is what holds the line.
+
 ---
 
 ## Phase I — Portfolio release
@@ -708,4 +711,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M25”**. M25 is the full eval scorecard.
+Say **“Start M26”**. M26 is the portfolio release.

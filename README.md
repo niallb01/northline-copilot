@@ -18,6 +18,62 @@ Server environment variable names: `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_U
 
 One sample chat turn, “What is 2 + 2?”, stored the OpenAI usage for that response in `chat_token_usage`: 831 prompt tokens, 9 completion tokens, and **840 total tokens**. The stored total matches that usage object.
 
+## Eval scorecard
+
+`npm run eval` runs the 45-case set in `tests/evals/scorecard.ts`. Refund cases use the story date **2026-10-22**. The script clears pending rows for `ch_annual_1`, `ch_monthly_1`, `ch_double_dup`, and `ch_double_1` before and after, so those cases start from a known table. It does not print an accuracy percentage.
+
+This is not a prompt-injection detector. A person can talk the model into asking for a refund or an exception. The cases check that `preview_refund` and `queueRefund` still decide, and that a rejected or unknown call does not insert a pending row.
+
+One run on 2026-11-02: **45 pass, 0 fail**. The sample token total is from `chat-cite-annual` in that run (“What is the annual plan refund window?”): 768 prompt tokens, 91 completion tokens, **859 total tokens**.
+
+| Case | Result |
+| --- | --- |
+| `annual-in-window` | pass |
+| `monthly-too-old` | pass |
+| `duplicate-charge` | pass |
+| `unknown-account-queue` | pass |
+| `second-request` | pass |
+| `concurrent-submit` | pass |
+| `preview-annual` | pass |
+| `preview-monthly` | pass |
+| `preview-duplicate` | pass |
+| `preview-unknown-account` | pass |
+| `preview-override` | pass |
+| `preview-unknown-charge` | pass |
+| `preview-original-too-old` | pass |
+| `preview-blank-id` | pass |
+| `failed-request-refund` | pass |
+| `get-account-annual` | pass |
+| `get-account-missing` | pass |
+| `list-charges-double` | pass |
+| `list-charges-missing` | pass |
+| `policy-annual-window` | pass |
+| `policy-monthly-window` | pass |
+| `policy-grace-period` | pass |
+| `policy-scale-uptime` | pass |
+| `policy-escalate-engineering` | pass |
+| `policy-invoices` | pass |
+| `policy-double-charge` | pass |
+| `policy-starter` | pass |
+| `policy-growth` | pass |
+| `policy-service-credit` | pass |
+| `policy-money-returned` | pass |
+| `policy-clock-skew` | pass |
+| `policy-front-line` | pass |
+| `policy-miss-crypto-refund` | pass |
+| `policy-miss-office-snack-policy` | pass |
+| `policy-miss-parental-leave-policy` | pass |
+| `policy-miss-pet-insurance-benefit` | pass |
+| `policy-miss-stock-option-vesting-schedule` | pass |
+| `citation-matching-chunk` | pass |
+| `chat-cite-annual` | pass |
+| `chat-cite-monthly` | pass |
+| `chat-refuse-crypto` | pass |
+| `chat-refuse-snack` | pass |
+| `chat-preview-no-write` | pass |
+| `chat-override` | pass |
+| `chat-failed-tool` | pass |
+
 ## MCP (local)
 
 `get_account`, `list_charges`, `search_policy`, and `preview_refund` are available from a local stdio server, `mcp/server.js`. Those handlers call `dispatchTool` in `lib/`, the same function the website uses. `preview_refund` and `search_policy` do not insert a pending row.
@@ -65,7 +121,7 @@ The **domain layer, database layer, Next.js app shell, workspace layout, demo lo
 | `app/` | Next.js App Router: home, `/workspace`, `/login`, `POST /api/login`, `GET /api/protected`, `GET /api/accounts/[accountId]`. |
 | `components/` | Workspace panels. Account and Charges show facts from the account route. Policy citations, the pending queue, and chat stay empty. Login form. |
 
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M11 complete; M12 next).
+Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M25 complete; M26 next).
 
 ## Demo accounts (seed)
 
@@ -104,6 +160,7 @@ npm test                      # refund rules (no database)
 npm run test:integration      # queueRefund against Postgres (requires DATABASE_URL)
 npm run print:acct-double     # read acct-double from Postgres
 npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
+npm run eval                  # M25 scorecard against Postgres and OpenAI
 ```
 
 `queue:refund-cases` leaves two pending rows (`ch_annual_1`, `ch_double_dup`) unless cleared. Integration tests delete pending rows for `ch_annual_1`, `ch_monthly_1`, and `ch_double_dup` before and after each run.

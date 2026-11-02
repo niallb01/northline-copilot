@@ -13,7 +13,8 @@
     "print:acct-double": "node --env-file=.env --import tsx scripts/print-acct-double.ts",
     "queue:refund-cases": "node --env-file=.env --import tsx scripts/queue-refund-cases.ts",
     "embed:policy": "node --env-file=.env --import tsx scripts/embed-policy-chunks.ts",
-    "search:policy": "node --env-file=.env --import tsx scripts/search-policy.ts"
+    "search:policy": "node --env-file=.env --import tsx scripts/search-policy.ts",
+    "eval": "node --env-file=.env --import tsx scripts/run-evals.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.12",
