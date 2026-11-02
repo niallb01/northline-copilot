@@ -113,7 +113,8 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M18a     | **Done**    |
 | M18b     | **Done**    |
 | M19      | **Done**    |
-| M20–M26  | Not started |
+| M20      | **Done**    |
+| M21–M26  | Not started |
 
 ---
 
@@ -588,6 +589,8 @@ A body field such as `confirmed: true` from the model is ignored. The route then
 
 **Not in this step:** Writing rows, token columns.
 
+**Done:** `public.audit_logs` is an empty table a later step can fill with one row per tool call. Columns are `tool_name`, `arguments` (a JSON object), `outcome` (a JSON object), and `pending_row_created`, plus `id` and `created_at`. There is no API key, secret, or token column. Row level security is on and there are no policies, so the Data API cannot read or write the table. The table has 0 rows. The dispatcher does not write here yet.
+
 ---
 
 ### M21 — Write an audit row for every tool call
@@ -693,4 +696,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M20”**. M20 adds the `audit_logs` table and nothing else. The table starts empty.
+Say **“Start M21”**. M21 writes one audit row for every tool call. The table from M20 starts empty.
