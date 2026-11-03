@@ -124,6 +124,20 @@ describe("settlePolicyCitations", () => {
     assert.equal(settled.reply, "within 30 days of the charge");
   });
 
+  it("shows a cited passage once and drops the markdown heading", () => {
+    const stored = `## Annual plans\n\n${annual} The charge is either the first purchase or a renewal. After day 30 the annual charge is not refunded.`;
+    const settled = settlePolicyCitations(
+      `An annual plan can be refunded in full when the request arrives within 30 days of the charge; after day 30 the annual charge is not refunded <cite document="refunds" chunk="refunds-annual-plans">${stored}</cite>`,
+      [{ documentId: "refunds", chunkId: "refunds-annual-plans", passage: stored }],
+    );
+    assert.equal(settled.reply.includes("##"), false);
+    assert.equal(settled.reply.includes("Annual plans An annual"), false);
+    assert.equal(
+      settled.reply,
+      `${annual} The charge is either the first purchase or a renewal. After day 30 the annual charge is not refunded.`,
+    );
+  });
+
   it("keeps a space when a cite tag is glued to the previous sentence", () => {
     const settled = settlePolicyCitations(
       `Annual plans have a window.<cite document="refunds" chunk="refunds-annual-plans">within 30 days of the charge</cite>`,

@@ -78,7 +78,7 @@ export function settlePolicyCitations(
       }
       const before = reply[offset - 1] ?? "";
       const pad = before && !/\s/.test(before) ? " " : "";
-      return pad + citation.quote;
+      return pad + plainPolicyText(citation.quote);
     }
     rejected.push({ documentId, chunkId, quote: rawQuote });
     return "";
@@ -88,7 +88,7 @@ export function settlePolicyCitations(
     return { reply: reply.trim(), citations, rejected };
   }
 
-  const cleaned = tidy(unwrapped);
+  const cleaned = tidy(preferCitedPassage(dropRepeatedSentences(plainPolicyText(unwrapped)), citations));
   return {
     reply: cleaned || (passages.length === 0 ? POLICY_REFUSAL : "I can only quote a passage the policy search returned."),
     citations,
@@ -123,6 +123,46 @@ function readAttr(attrs: string, ...names: string[]): string {
     if (match?.[1]) return match[1].trim();
   }
   return "";
+}
+
+/** Stored passages start with a markdown heading. The chat and citations panel show the sentences. */
+export function plainPolicyText(text: string): string {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const body = lines.filter((line) => !/^#{1,6}\s+/.test(line));
+  return (body.length > 0 ? body : lines).join(" ").replace(/#{1,6}\s+/g, "").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+function preferCitedPassage(text: string, citations: readonly PolicyCitation[]): string {
+  for (const citation of citations) {
+    const plain = plainPolicyText(citation.quote);
+    const opening = collapseWhitespace(plain).slice(0, 48).toLowerCase();
+    if (opening.length < 48) continue;
+    const body = collapseWhitespace(text).toLowerCase();
+    const first = body.indexOf(opening);
+    if (first === -1) continue;
+    if (body.indexOf(opening, first + opening.length) === -1) continue;
+    return plain;
+  }
+  return text;
+}
+
+function dropRepeatedSentences(text: string): string {
+  const parts = text.split(/(?<=[.!?])\s+/).map((part) => part.trim()).filter(Boolean);
+  const kept: string[] = [];
+  for (const part of parts) {
+    const index = kept.findIndex((previous) => samePoint(previous, part));
+    if (index === -1) kept.push(part);
+    else kept[index] = part;
+  }
+  return kept.join(" ");
+}
+
+function samePoint(left: string, right: string): boolean {
+  const a = collapseWhitespace(left).toLowerCase();
+  const b = collapseWhitespace(right).toLowerCase();
+  if (a.includes(b) || b.includes(a)) return true;
+  const span = 48;
+  return a.length >= span && b.length >= span && a.slice(0, span) === b.slice(0, span);
 }
 
 function tidy(text: string): string {

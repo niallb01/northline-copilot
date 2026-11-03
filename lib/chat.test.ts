@@ -425,6 +425,8 @@ describe("completeChatTurn", () => {
     assert.equal(secondMessages.at(-2)?.tool_calls?.[0]?.function.name, "list_charges");
     assert.equal(secondMessages.at(-1)?.role, "tool");
     assert.equal(secondMessages.at(-1)?.tool_call_id, "call_1");
+    assert.match(secondMessages.at(-1)?.content ?? "", /£149\.00/);
+    assert.equal((secondMessages.at(-1)?.content ?? "").includes('"$'), false);
     assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_1/);
     assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_dup/);
 

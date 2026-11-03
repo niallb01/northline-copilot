@@ -5,7 +5,7 @@
  * quote that did not match one of these passages.
  */
 
-import type { PolicyPassageView } from "../lib/policyCitations";
+import { plainPolicyText, type PolicyPassageView } from "../lib/policyCitations";
 import { Panel } from "./Panel";
 import styles from "./PolicyCitations.module.css";
 
@@ -29,7 +29,7 @@ export function PolicyCitations({ passages }: { passages: PolicyPassageView[] })
                   <span className={styles.label}>Path</span>{" "}
                   <code className={styles.code}>{passage.path}</code>
                 </p>
-                <p className={styles.text}>{passage.text}</p>
+                <p className={styles.text}>{plainPolicyText(passage.text)}</p>
               </li>
             ))}
           </ol>

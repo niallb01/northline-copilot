@@ -2,7 +2,7 @@
  * Asks OpenAI for a chat completion. When the model requests get_account,
  * list_charges, preview_refund, or search_policy, this file runs that tool
  * through the dispatcher and sends the result back so the model can write the
- * final sentence. A policy quote counts only when its document id and chunk id
+ * final sentence. Charge amounts in that tool JSON are pounds. A policy quote counts only when its document id and chunk id
  * were in that turn's search_policy result and the quote is inside that passage.
  * When that search returns no passage, the reply is a refusal and no quote is
  * kept. An eligible preview is returned separately as a proposal for the route
@@ -33,7 +33,7 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. Speak like a billing desk: use customer name, NL- account number, plan, and charge amount and date. Do not show internal ids such as acct- or ch_ unless the operator pasted one or you need them to pick between several charges. When the operator asks you to look up an account, call get_account with the account id, the customer name, or the NL- account number shown in the workspace, then summarize the tool result: customer name, plan, and NL- account number. When the operator asks for the charges on an account, call list_charges with the same key you used for get_account, then list each charge as amount and date (and note duplicate lines on the same invoice when relevant). When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies an exact contiguous span of the passage that answers the question: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. Speak like a billing desk: use customer name, NL- account number, plan, and charge amount and date. Every amount is pounds sterling. Copy the £ amount from the tool result. Never write $, USD, or a bare number for money. Do not show internal ids such as acct- or ch_ unless the operator pasted one or you need them to pick between several charges. When the operator asks you to look up an account, call get_account with the account id, the customer name, or the NL- account number shown in the workspace, then summarize the tool result: customer name, plan, and NL- account number. When the operator asks for the charges on an account, call list_charges with the same key you used for get_account, then list each charge as amount and date (and note duplicate lines on the same invoice when relevant). When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies one short exact span of the passage that answers the question, not the markdown heading and not the whole passage. Do not repeat those words outside the cite tag: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
 
 /** Tools this chat loop may run. None of them insert a pending row. */
 const CHAT_TOOLS = [
@@ -823,16 +823,39 @@ async function runChatTool(
     policySearched = true;
     policyPassages = result.result.passages;
   }
-  let content = redact(JSON.stringify(result), apiKey);
+  let content = redact(JSON.stringify(poundsForModel(result)), apiKey);
   if (policyPassages.length > 0) {
     content +=
-      '\nQuote one exact contiguous span from one passage with <cite document="DOCUMENT_ID" chunk="CHUNK_ID">exact words</cite> using that passage\'s documentId and chunkId. Do not add quotation marks around the words.';
+      '\nQuote one short exact span from one passage with <cite document="DOCUMENT_ID" chunk="CHUNK_ID">exact words</cite> using that passage\'s documentId and chunkId. Do not include the markdown heading, do not quote the whole passage, and do not add quotation marks around the words.';
   }
   content = content.slice(0, 8000);
   if (process.env.NODE_ENV === "development") {
     console.log("POST /api/chat tool result from lib/:", content);
   }
   return { content, proposal: eligibleProposal(result), policySearched, policyPassages };
+}
+
+/** The model sees pounds, not a bare number it can read as dollars. */
+function poundsForModel(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(poundsForModel);
+  if (typeof value !== "object" || value === null) return value;
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "amount" && typeof item === "number" && Number.isFinite(item)) {
+      next.amount = formatGbp(item);
+      next.currency = "GBP";
+      continue;
+    }
+    next[key] = poundsForModel(item);
+  }
+  return next;
+}
+
+function formatGbp(amount: number): string {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(amount);
 }
 
 function safeCallId(id: string, index: number, used: Set<string>): string {
