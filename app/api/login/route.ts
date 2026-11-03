@@ -18,26 +18,17 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   if (!demoLoginConfigured()) {
-    return htmlResponse(
-      "Demo login is not configured. Set DEMO_PASSWORD and SESSION_SECRET on the server.",
-      500,
-    );
+    return loginErrorRedirect(request, "config");
   }
 
   const password = await readPassword(request);
   if (!passwordMatchesDemo(password)) {
-    return htmlResponse(
-      `That password did not match. <a href="/login">Back to login</a>`,
-      401,
-    );
+    return loginErrorRedirect(request, "invalid");
   }
 
   const token = signSession();
   if (!token) {
-    return htmlResponse(
-      "Demo login is not configured. Set DEMO_PASSWORD and SESSION_SECRET on the server.",
-      500,
-    );
+    return loginErrorRedirect(request, "config");
   }
 
   const response = NextResponse.redirect(new URL("/workspace", request.url), 303);
@@ -55,12 +46,8 @@ async function readPassword(request: Request): Promise<string> {
   }
 }
 
-function htmlResponse(body: string, status: number) {
-  return new Response(`<!DOCTYPE html><html lang="en"><body><p>${body}</p></body></html>`, {
-    status,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    },
-  });
+function loginErrorRedirect(request: Request, code: "invalid" | "config") {
+  const url = new URL("/login", request.url);
+  url.searchParams.set("error", code);
+  return NextResponse.redirect(url, 303);
 }

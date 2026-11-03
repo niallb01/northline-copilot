@@ -10,9 +10,25 @@ import { MarketingCard, MarketingShell } from "../../components/MarketingShell";
 import { SESSION_COOKIE_NAME, verifySession } from "../../lib/session";
 import shell from "../../components/MarketingShell.module.css";
 
-export default async function LoginPage() {
+function loginErrorMessage(code: string | undefined): string | null {
+  if (code === "invalid") {
+    return "That password did not match. Use northline-demo for this demo, or try again.";
+  }
+  if (code === "config") {
+    return "Demo login is not configured on the server. Set DEMO_PASSWORD and SESSION_SECRET.";
+  }
+  return null;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const cookieStore = await cookies();
   const signedIn = verifySession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const { error: errorCode } = await searchParams;
+  const errorMessage = signedIn ? null : loginErrorMessage(errorCode);
 
   return (
     <MarketingShell>
@@ -32,6 +48,11 @@ export default async function LoginPage() {
           </div>
         ) : (
           <>
+            {errorMessage ? (
+              <p className={shell.errorBanner} role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
             <div className={shell.callout}>
               <span className={shell.calloutLabel}>Demo password</span>
               Use <code className={shell.code}>northline-demo</code> to continue.

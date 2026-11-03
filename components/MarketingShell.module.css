@@ -109,6 +109,17 @@
   color: #6b7280;
 }
 
+.errorBanner {
+  margin: 1rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #991b1b;
+}
+
 .callout {
   margin: 1.25rem 0 0;
   padding: 0.75rem 0.85rem;
