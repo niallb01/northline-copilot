@@ -816,6 +816,24 @@ describe("previewRefundIntent", () => {
     assert.equal(previewRefundIntent("What is a refund?"), null);
     assert.equal(previewRefundIntent("Preview charges on acct-double."), null);
   });
+
+  it("detects rep-style refund questions from the workspace", () => {
+    assert.deepEqual(previewRefundIntent("Can we refund Tom Ellis's September charge?"), {
+      account_id: "acct-monthly-late",
+      charge_id: "ch_monthly_1",
+    });
+    assert.deepEqual(previewRefundIntent("Can we refund the September charge for NL-1048292?"), {
+      account_id: "acct-monthly-late",
+      charge_id: "ch_monthly_1",
+    });
+    assert.deepEqual(
+      previewRefundIntent("Tom Ellis wants a refund on his September payment — are we allowed?"),
+      {
+        account_id: "acct-monthly-late",
+        charge_id: "ch_monthly_1",
+      },
+    );
+  });
 });
 
 describe("readChatRequest", () => {

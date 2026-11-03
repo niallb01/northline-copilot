@@ -119,7 +119,7 @@ Small eval checkpoints ship inside M08, M16a, and M19. M25 is the full set, not 
 | M23      | **Done**    |
 | M24      | **Done**    |
 | M25      | **Done**    |
-| M26      | Not started |
+| M26      | **Done**    |
 
 ---
 
@@ -695,6 +695,8 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 **Done when:** A stranger opens the deployed app, asks about `acct-monthly-late`, sees a cited policy answer and a rejected refund with no new pending row, and can point Cursor at the MCP server and hit the same rules.
 
+**Done:** Production is https://northline-copilot.vercel.app. The Vercel project `northline-copilot` uses the Next.js preset and the Next.js output directory. An earlier production deploy had failed because it looked for a `public` folder after `next build`. Server env on Production holds `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, and `SESSION_SECRET`. Deployment protection is off. The Supabase project `northline-copilot` (`eu-west-1`) has row level security on and no policies, so the Data API cannot read the tables. `DATABASE_URL` is the session pooler on port 5432. The README covers architecture, the tool list, MCP setup, limits, screenshots, the M25 pass/fail list, and the sample token total. Opened the production app, signed in, and asked about `acct-monthly-late` / `ch_monthly_1`. `preview_refund` rejected it: the monthly charge is 53 days old, past the 14-day window. Confirm was not offered. A second question, “What is the monthly plan refund window?”, called `search_policy` and cited `refunds` / `refunds-monthly-plans` with a quote inside that passage. `pending_refunds` stayed at 5 rows, 0 pending, and none were for `acct-monthly-late`. Pointed a client at `mcp/server.js`. `preview_refund` for that charge rejected it the same way, including when the arguments carried `confirmed: true`. `search_policy` returned the same document and chunk. `request_refund` with `confirmed: true` still asked for the human form. Declining it saved nothing. No new browser → API call, so no new dev wire logs.
+
 ---
 
 ## Session checklist
@@ -711,4 +713,4 @@ At the start of this step, check whether the MCP SDK can ask the user that quest
 
 ## When you’re ready
 
-Say **“Start M26”**. M26 is the portfolio release.
+M26 is done. The portfolio release is https://northline-copilot.vercel.app. The README is the guide for a stranger.

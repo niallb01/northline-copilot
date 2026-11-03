@@ -11,6 +11,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Northline Copilot",
   description: "Billing support workspace. Refunds are queued for human review.",
+  themeColor: "#111827",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

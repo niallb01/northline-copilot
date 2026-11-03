@@ -1,0 +1,54 @@
+.content {
+  padding: 0.875rem 1rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #374151;
+}
+
+.lead {
+  margin: 0 0 0.75rem;
+  color: #4b5563;
+}
+
+.steps {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.steps li {
+  padding-left: 0.15rem;
+}
+
+.exampleButton {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #3730a3;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.exampleButton:hover {
+  background: #e0e7ff;
+}
+
+.exampleButton:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.outcome {
+  margin: 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.8125rem;
+  color: #4b5563;
+}

@@ -22,6 +22,9 @@ import {
   type PolicyCitation,
   type PolicyPassageView,
 } from "./policyCitations";
+import { resolveAccountId } from "./accounts";
+import { seedAccounts } from "./seed";
+import type { Account } from "./types";
 import { dispatchTool, eligibleProposal, type EligibleProposal, type ToolResult } from "./tools";
 
 const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
@@ -30,7 +33,7 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with that account id, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with that account id, then name every charge id from that result. When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies an exact contiguous span of the passage that answers the question: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
+  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. When the operator asks you to look up an account, call get_account with the account id, the customer name, or the NL- account number shown in the workspace, then summarize the tool result: customer name, plan, and account id. When the operator asks for the charges on an account, call list_charges with the same key you used for get_account, then name every charge id from that result. When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies an exact contiguous span of the passage that answers the question: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
 
 /** Tools this chat loop may run. None of them insert a pending row. */
 const CHAT_TOOLS = [
@@ -208,7 +211,7 @@ export type ChatCompletionClient = {
   fetch: typeof fetch;
 };
 
-/** When the operator names both ids and asks for a refund preview, run the tool on the server. */
+/** When the operator asks for a refund preview, run preview_refund on the server before the model reply. */
 export function previewRefundIntent(
   message: string,
 ): { account_id: string; charge_id: string } | null {
@@ -225,11 +228,80 @@ export function previewRefundIntent(
 
   if (!wantsPreview) return null;
 
-  const account = text.match(/\bacct-[a-z0-9-]+\b/i)?.[0];
-  const charge = text.match(/\bch_[a-z0-9_]+\b/i)?.[0];
-  if (!account || !charge) return null;
+  const chargeFromText = text.match(/\bch_[a-z0-9_]+\b/i)?.[0];
+  const accountFromText = text.match(/\bacct-[a-z0-9-]+\b/i)?.[0];
+  if (accountFromText && chargeFromText) {
+    return { account_id: accountFromText, charge_id: chargeFromText };
+  }
 
-  return { account_id: account, charge_id: charge };
+  const accountId = accountIdFromOperatorMessage(text);
+  if (!accountId) return null;
+
+  const seed = seedAccounts.find((account) => account.id === accountId);
+  if (!seed) return null;
+
+  const chargeId = chargeFromText ?? chargeIdFromOperatorMessage(text, seed);
+  if (!chargeId) return null;
+
+  return { account_id: accountId, charge_id: chargeId };
+}
+
+function accountIdFromOperatorMessage(text: string): string | null {
+  const acct = text.match(/\bacct-[a-z0-9-]+\b/i)?.[0];
+  if (acct) {
+    const id = resolveAccountId(acct);
+    if (seedAccounts.some((account) => account.id === id)) return id;
+  }
+
+  const accountNumber = text.match(/\bNL-\d+\b/i)?.[0];
+  if (accountNumber) {
+    const id = resolveAccountId(accountNumber);
+    if (seedAccounts.some((account) => account.id === id)) return id;
+  }
+
+  const lower = text.toLowerCase();
+  for (const account of seedAccounts) {
+    if (lower.includes(account.customerName.toLowerCase())) return account.id;
+  }
+
+  return null;
+}
+
+function chargeIdFromOperatorMessage(text: string, account: Account): string | null {
+  const succeeded = account.charges.filter((charge) => charge.status === "succeeded");
+  if (succeeded.length === 1) return succeeded[0].chargeId;
+
+  const lower = text.toLowerCase();
+  const monthHints: Array<{ pattern: RegExp; month: number }> = [
+    { pattern: /\bjanuary\b|\bjan\b/, month: 1 },
+    { pattern: /\bfebruary\b|\bfeb\b/, month: 2 },
+    { pattern: /\bmarch\b|\bmar\b/, month: 3 },
+    { pattern: /\bapril\b|\bapr\b/, month: 4 },
+    { pattern: /\bmay\b/, month: 5 },
+    { pattern: /\bjune\b|\bjun\b/, month: 6 },
+    { pattern: /\bjuly\b|\bjul\b/, month: 7 },
+    { pattern: /\baugust\b|\baug\b/, month: 8 },
+    { pattern: /\bseptember\b|\bsept\b|\bsep\b/, month: 9 },
+    { pattern: /\boctober\b|\boct\b/, month: 10 },
+    { pattern: /\bnovember\b|\bnov\b/, month: 11 },
+    { pattern: /\bdecember\b|\bdec\b/, month: 12 },
+  ];
+
+  for (const hint of monthHints) {
+    if (!hint.pattern.test(lower)) continue;
+    const matches = succeeded.filter((charge) => {
+      const month = Number(charge.date.split("-")[1]);
+      return month === hint.month;
+    });
+    if (matches.length === 1) return matches[0].chargeId;
+  }
+
+  if (/\bduplicate\b/.test(lower)) {
+    const dup = succeeded.find((charge) => charge.chargeId === "ch_double_dup");
+    if (dup) return dup.chargeId;
+  }
+
+  return null;
 }
 
 /** When the operator asks about stored policy and is not previewing a charge, search before the reply. */

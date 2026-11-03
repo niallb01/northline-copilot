@@ -1,11 +1,16 @@
-html,
-body {
+html {
   margin: 0;
   padding: 0;
+  /* Overscroll / rubber-band on Safari and iOS shows html, not body. */
+  background: #111827;
 }
 
 body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   color: #111827;
-  background: #ffffff;
+  background: #f3f4f6;
+  -webkit-font-smoothing: antialiased;
 }

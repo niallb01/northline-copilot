@@ -18,11 +18,13 @@ import { ChatPanel } from "./ChatPanel";
 import { ConfirmRefund } from "./ConfirmRefund";
 import { PendingQueue } from "./PendingQueue";
 import { PolicyCitations } from "./PolicyCitations";
+import { TryThisJourney } from "./TryThisJourney";
 import styles from "./Workspace.module.css";
 
 export function Workspace() {
   const [offer, setOffer] = useState<ConfirmOffer | null>(null);
   const [policyPassages, setPolicyPassages] = useState<PolicyPassageView[]>([]);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   return (
     <div className={styles.workspace}>
@@ -31,9 +33,15 @@ export function Workspace() {
       </header>
       <div className={styles.columns}>
         <div className={styles.chat}>
-          <ChatPanel onConfirmOffer={setOffer} onPolicyPassages={setPolicyPassages} />
+          <ChatPanel
+            onConfirmOffer={setOffer}
+            onPolicyPassages={setPolicyPassages}
+            pendingPrompt={pendingPrompt}
+            onPendingPromptApplied={() => setPendingPrompt(null)}
+          />
         </div>
         <div className={styles.context} aria-label="Context">
+          <TryThisJourney onUseExample={setPendingPrompt} />
           <AccountContext />
           <ConfirmRefund offer={offer} onConsumed={() => setOffer(null)} />
           <PendingQueue />

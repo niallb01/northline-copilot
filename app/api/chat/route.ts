@@ -61,11 +61,13 @@ export async function POST(request: Request) {
   const result = await completeChatTurn(parsed.message, parsed.history);
 
   if (result.ok && result.usage) {
-    console.log("POST /api/chat usage:", {
-      prompt_tokens: result.usage.promptTokens,
-      completion_tokens: result.usage.completionTokens,
-      total_tokens: result.usage.totalTokens,
-    });
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat usage:", {
+        prompt_tokens: result.usage.promptTokens,
+        completion_tokens: result.usage.completionTokens,
+        total_tokens: result.usage.totalTokens,
+      });
+    }
     try {
       await writeChatTokenUsage(result.usage);
     } catch {

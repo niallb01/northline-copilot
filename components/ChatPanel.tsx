@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ConfirmOffer } from "../lib/confirmOffer";
 import type { PolicyCitation, PolicyPassageView } from "../lib/policyCitations";
 import { Panel } from "./Panel";
@@ -143,9 +143,14 @@ function formatArguments(value: unknown): string {
 export function ChatPanel({
   onConfirmOffer,
   onPolicyPassages,
+  pendingPrompt,
+  onPendingPromptApplied,
 }: {
   onConfirmOffer?: (offer: ConfirmOffer) => void;
   onPolicyPassages?: (passages: PolicyPassageView[]) => void;
+  /** Filled into the composer from Try this demo; cleared after apply. */
+  pendingPrompt?: string | null;
+  onPendingPromptApplied?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
@@ -153,6 +158,14 @@ export function ChatPanel({
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(1);
   const sendingRef = useRef(false);
+  const messageInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!pendingPrompt?.trim()) return;
+    setDraft(pendingPrompt);
+    onPendingPromptApplied?.();
+    messageInputRef.current?.focus();
+  }, [pendingPrompt]);
 
   function appendEntry(entry: {
     kind: "user" | "assistant";
@@ -241,8 +254,10 @@ export function ChatPanel({
         return;
       }
 
-      for (const call of reply.toolCalls) {
-        appendEntry({ kind: "tool", name: call.name, arguments: call.arguments });
+      if (process.env.NODE_ENV === "development") {
+        for (const call of reply.toolCalls) {
+          appendEntry({ kind: "tool", name: call.name, arguments: call.arguments });
+        }
       }
       appendEntry({ kind: "assistant", text: reply.reply });
       onPolicyPassages?.(reply.policyPassages);
@@ -271,7 +286,7 @@ export function ChatPanel({
         <div className={styles.transcript} role="log" aria-live="polite" aria-relevant="additions">
           {messages.length === 0 ? (
             <p className={styles.empty}>
-              Ask a question, look up an account, ask for its charges, ask about a refund window, or ask if a charge would be refundable. The reply comes from the model.
+              Follow <strong>Try this demo</strong> on the right, or type your own question. Replies come from the model; refund eligibility comes from the tool layer.
             </p>
           ) : (
             <ol className={styles.list}>
@@ -310,6 +325,7 @@ export function ChatPanel({
           </label>
           <div className={styles.row}>
             <input
+              ref={messageInputRef}
               className={styles.input}
               id="chat-message"
               name="message"

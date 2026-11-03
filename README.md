@@ -1,28 +1,127 @@
 # Northline Copilot
 
-A reference implementation of a **billing support workspace** for Northline, a fictional B2B SaaS company. The application helps operators investigate disputes, retrieve policy context, and **queue refunds for human review**. It does not execute payouts: eligible requests create a `pending` record; ineligible requests are rejected with no database write. All customer and billing data in the repository is **synthetic**.
+A billing support workspace for Northline, a fictional B2B SaaS company. An operator asks about an account in chat. The model looks up facts and quotes stored policy. Refund eligibility is decided in TypeScript. A human confirms before anything is queued. Nothing in this app pays money.
 
-## Overview
+All customer, charge, and policy data in the repository is synthetic.
 
-Northline Copilot is designed as a **two-panel workspace**: conversational investigation on one side and structured account context (charges, policy citations, pending queue) on the other. A language model assists with lookup and explanation; **refund eligibility is enforced in TypeScript** (`lib/refundRules.ts`), not by the model, SQL, or static prompt text. Writes to the pending queue require explicit human confirmation: the website confirm button, or an MCP form that the human fills with that exact account id and charge id.
+**Live app:** https://northline-copilot.vercel.app
 
-**Target stack:** Next.js (App Router), Supabase Postgres, pgvector for policy retrieval, OpenAI invoked server-side only, a shared tool layer consumed by both the web app and an MCP stdio server, deployed on Vercel and Supabase.
+Sign in with the shared demo password `northline-demo`. It is checked on the server and stored only as an HttpOnly cookie. It is not a user account.
 
-## Staging
+## Try the monthly-late case
 
-This workspace slice is deployed at https://northline-copilot-5ildndkmr-niallb01.vercel.app.
+In the live workspace, use the **Try this demo** panel on the right (steps and example questions). The walkthrough below is the same journey for readers of this file.
 
-Server environment variable names: `OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, `SESSION_SECRET`.
+1. Open https://northline-copilot.vercel.app and sign in with `northline-demo`.
+2. In **Demo customers**, click **Tom Ellis**. The Account panel shows **NL-1048292** and a monthly plan. Charges shows **£49.00** on **11 Sept 2026**.
+3. In chat, ask something you would actually type on a desk, for example:
+   - `Tom Ellis wants a refund on his September charge — are we allowed?`
+   - or, using the account number on the panel: `Can we refund the September charge for NL-1048292?`
+4. Ask: `What's the monthly plan refund window?`
 
-## Token usage
+You should see `preview_refund` reject the charge, no confirm button, and an empty pending queue. The policy reply quotes the stored monthly-plan passage, and the citations panel names document `refunds` and chunk `refunds-monthly-plans`. You do not need internal ids like `acct-monthly-late` or `ch_monthly_1` in chat; the server resolves the customer name, the NL- number, or the month against the demo seed when you ask about a refund.
 
-One sample chat turn, “What is 2 + 2?”, stored the OpenAI usage for that response in `chat_token_usage`: 831 prompt tokens, 9 completion tokens, and **840 total tokens**. The stored total matches that usage object.
+Checked on 2026-11-03 against production. The monthly charge was 53 days old, past the 14-day window. `pending_refunds` stayed at 5 rows, 0 pending, and none of them were for `acct-monthly-late`.
+
+![Chat rejects the monthly refund and quotes the 14-day window](docs/screenshots/workspace-top.png)
+
+![Citations name refunds / refunds-monthly-plans, and the pending queue stays empty](docs/screenshots/workspace-citations.png)
+
+The same rules are on the local MCP server. Setup is below.
+
+## Architecture
+
+The website and the MCP server both call `lib/`. Refund windows are not copied into SQL, the prompt, or the page.
+
+```text
+Browser (session cookie)
+  POST /api/chat          → lib/chat.ts → OpenAI, then dispatchTool
+  POST /api/tools         → dispatchTool
+  POST /api/refunds/confirm → queueRefund, only if the proposal cookie matches
+  GET  /api/pending-refunds
+  POST /api/pending-refunds/review
+
+MCP stdio (no session cookie)
+  mcp/server.js → dispatchTool for reads and preview
+                → queueRefund only after the human form matches the ids
+
+lib/
+  tools.ts        argument checks, one audit row per call
+  refundRules.ts  eligibility
+  refunds.ts      one Postgres transaction, at most one pending row
+  policy.ts       pgvector search
+  accounts.ts     reads through the Supabase service role
+```
+
+Reads of accounts and charges use `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the server. Writes, audit rows, token counts, and policy search use `DATABASE_URL`, a Postgres session-mode connection on port 5432. OpenAI is called only from the server. The browser never sees the API key, the service role key, or the session value.
+
+Chat may call `get_account`, `list_charges`, `search_policy`, and `preview_refund`. It cannot call `request_refund`. When a preview would be pending, the route stores that proposal on a second HttpOnly cookie. The confirm button posts the account id and charge id to `POST /api/refunds/confirm`. A `confirmed` field in the body is ignored. The ids have to match the cookie or nothing is inserted.
+
+`GET /api/accounts/[accountId]` is the same account read behind the session cookie. The workspace panels use `POST /api/tools`.
+
+## Tools
+
+| Tool | Who can call it | What it does |
+| --- | --- | --- |
+| `get_account` | Chat and MCP | One account: customer, plan, id, charges. |
+| `list_charges` | Chat and MCP | Charge lines for one account. A missing account is an error, not an empty list. |
+| `search_policy` | Chat and MCP | Nearest stored policy passages, each with document id and chunk id. |
+| `preview_refund` | Chat and MCP | Same eligibility rules as a write. Returns `pending` or `rejected`. Inserts nothing. |
+| `request_refund` | Not a chat tool. MCP only, after a human form | Calls `queueRefund` when the human types the same account id and charge id. |
+
+Unknown tool names, including a model call to `request_refund` on the website, are logged as “Unknown tool.” with `pending_row_created` false. No pending row is inserted.
+
+## Refund rules
+
+`requestRefund` and `previewRefund` in `lib/refundRules.ts` share one decision:
+
+- Annual plan: the charge is within 30 days.
+- Monthly plan: the charge is within 14 days.
+- Duplicate: a later successful charge on the same invoice can be queued even when the original is outside the window.
+- A charge that already has a pending row is rejected.
+- Reject means nothing is appended.
+
+The live app uses the real calendar day. The eval script pins that day to **2026-10-22**, so the three seed stories stay stable in tests. On the deployed app the age changes as the calendar moves. `ch_annual_1` is dated 2026-10-11, so the annual window on production closes after 2026-11-10.
+
+`queueRefund` runs that decision inside one Postgres transaction. A partial unique index on `(account_id, charge_id)` where status is `pending` stops two pending rows for the same charge.
+
+## MCP setup
+
+`mcp/server.js` is a local stdio process. Cursor starts it. The browser does not call it, and it does not read the website session cookie. It loads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `OPENAI_API_KEY` from the repo `.env`.
+
+`request_refund` is registered because `@modelcontextprotocol/sdk` 1.32.2 can ask the human to confirm (`Server.elicitInput`, form mode). The handler ignores any confirmation field on the model arguments. Decline, a mismatched id, or a client that cannot show the form inserts nothing.
+
+Point Cursor at the server with the absolute path to `mcp/server.js` on your machine. This checkout uses `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "northline": {
+      "command": "node",
+      "args": ["/Users/niallbennett/Desktop/northline-copilot/mcp/server.js"]
+    }
+  }
+}
+```
+
+Replace that path if you cloned the repo somewhere else. Run `npm install` first so `tsx` can load the TypeScript in `lib/`.
+
+Checked from this checkout on 2026-11-03. `preview_refund` for `acct-monthly-late` / `ch_monthly_1` returned rejected, 53 days old, past 14 days, including when the arguments carried `confirmed: true`. `search_policy` for “monthly plan refund window” returned `refunds` / `refunds-monthly-plans`. `request_refund` for the same charge, again with `confirmed: true`, asked for the form. Declining it saved nothing. The pending table did not gain a row.
+
+## Limits
+
+- The app queues a pending review. It does not send a payout.
+- A person can talk the model into asking for a refund or an exception. There is no general prompt-injection detector. `preview_refund` and `queueRefund` still decide, and a rejected or unknown call does not insert a row.
+- A policy quote is kept only when its document id and chunk id were in that turn’s `search_policy` result and the quote is inside that passage. If nothing meets the cutoff, the reply is a refusal and no quote is kept.
+- The similarity cutoff is 0.45 cosine similarity on `text-embedding-3-small`. It was set between known-supported questions (at least 0.476) and known-unsupported ones (at most 0.370). It does not prove a passage answers the question.
+- Chat accepts a message up to 2000 characters and the last 20 turns. One model step runs at most 3 tool calls.
+- The chat model defaults to `gpt-4.1-mini`. Set `OPENAI_MODEL` to override it.
+- Row level security is on for every public table, and there are no policies. The Data API cannot read or write those tables. The service role key stays on the server.
+- MCP is a local process. It is not deployed with the website.
 
 ## Eval scorecard
 
-`npm run eval` runs the 45-case set in `tests/evals/scorecard.ts`. Refund cases use the story date **2026-10-22**. The script clears pending rows for `ch_annual_1`, `ch_monthly_1`, `ch_double_dup`, and `ch_double_1` before and after, so those cases start from a known table. It does not print an accuracy percentage.
-
-This is not a prompt-injection detector. A person can talk the model into asking for a refund or an exception. The cases check that `preview_refund` and `queueRefund` still decide, and that a rejected or unknown call does not insert a pending row.
+`npm run eval` runs the 45-case set in `tests/evals/scorecard.ts`. Refund cases use the story date **2026-10-22**. The script clears pending rows for `ch_annual_1`, `ch_monthly_1`, `ch_double_dup`, and `ch_double_1` before and after. It does not print an accuracy percentage.
 
 One run on 2026-11-02: **45 pass, 0 fail**. The sample token total is from `chat-cite-annual` in that run (“What is the annual plan refund window?”): 768 prompt tokens, 91 completion tokens, **859 total tokens**.
 
@@ -74,97 +173,60 @@ One run on 2026-11-02: **45 pass, 0 fail**. The sample token total is from `chat
 | `chat-override` | pass |
 | `chat-failed-tool` | pass |
 
-## MCP (local)
+## Production
 
-`get_account`, `list_charges`, `search_policy`, and `preview_refund` are available from a local stdio server, `mcp/server.js`. Those handlers call `dispatchTool` in `lib/`, the same function the website uses. `preview_refund` and `search_policy` do not insert a pending row.
+The Vercel project is `northline-copilot`. The framework preset is Next.js and the output directory is the Next.js default. An earlier production deploy failed because the project looked for a `public` output folder after `next build`. Production is https://northline-copilot.vercel.app. Deployment protection is off, so the URL opens without a Vercel login. The demo password is the gate.
 
-`request_refund` is registered because the MCP SDK can ask the human to confirm a write (`Server.elicitInput`, form mode). The handler ignores any confirmation field on the model arguments. It calls `queueRefund` only after the human accepts and the account id and charge id they submit match that call. Decline, a mismatch, or a client that cannot show the form inserts nothing. Refunds are not queued from the model alone. The server does not read the website session cookie.
+Server environment variables on Production, names only:
 
-Run `npm install` first. The process reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `OPENAI_API_KEY` from the repo `.env`.
+`OPENAI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_PASSWORD`, `SESSION_SECRET`.
 
-The MCP server is **not** called from the browser; Cursor starts it over stdio when the agent uses northline tools. The website uses `POST /api/tools` and `POST /api/chat` with the same `dispatchTool` path in `lib/`.
+Do not prefix any of those with `NEXT_PUBLIC_`. Optional: `OPENAI_MODEL`.
 
-Cursor MCP config (`.cursor/mcp.json`):
+The Supabase project is `northline-copilot` in `eu-west-1`. Row level security is enabled on `accounts`, `charges`, `pending_refunds`, `policy_chunks`, `audit_logs`, and `chat_token_usage`, with no policies. `DATABASE_URL` is the session pooler on port **5432**, not the transaction pooler on 6543. Percent-encode special characters in the password.
 
-```json
-{
-  "mcpServers": {
-    "northline": {
-      "command": "node",
-      "args": ["/Users/niallbennett/Desktop/northline-copilot/mcp/server.js"]
-    }
-  }
-}
-```
-
-## Refund workflow
-
-1. **Read** account and charge data from Postgres (Supabase client for reads).
-2. **Evaluate** eligibility via `requestRefund` in `lib/refundRules.ts`: annual plans within 30 days, monthly within 14 days, duplicate successful charges on the same invoice, and rejection when a pending row already exists for the charge.
-3. **Persist** only on accept: `queueRefund` in `lib/refunds.ts` runs a single Postgres transaction (session-mode `DATABASE_URL`), invokes the rules, and inserts at most one row into `pending_refunds`. A partial unique index prevents duplicate pending rows for the same charge.
-
-The model may propose or preview outcomes; it is not the authority on eligibility or payment.
-
-## Implementation status
-
-The **domain layer, database layer, Next.js app shell, workspace layout, demo login, and account context read** are in place. `/workspace` is chat on the left and context on the right. The Account and Charges panels load one account through `GET /api/accounts/[accountId]`, which checks the session cookie and calls `getAccount`. Chat, policy citations, and the pending queue stay empty. `/login` posts a shared demo password and sets an HttpOnly session cookie. `GET /api/protected` returns 401 without that cookie and 200 after login. The pending queue is the next step (M12). Present capabilities:
-
-| Component | Responsibility |
-| --- | --- |
-| `lib/refundRules.ts` | Refund eligibility (unit-tested, in-memory). |
-| `lib/accounts.ts`, `lib/supabase.ts` | Read path for accounts and charges (service role, server-only). |
-| `lib/postgres.ts`, `lib/refunds.ts` | Write path: transactional `queueRefund`. |
-| `lib/session.ts` | Demo password check and signed session token. No user table. |
-| `supabase/migrations/` | Schema, seed data, grants. |
-| `tests/integration/` | Persistence and concurrency checks against Postgres. |
-| `scripts/` | Manual verification against a linked Supabase project. |
-| `app/` | Next.js App Router: home, `/workspace`, `/login`, `POST /api/login`, `GET /api/protected`, `GET /api/accounts/[accountId]`. |
-| `components/` | Workspace panels. Account and Charges show facts from the account route. Policy citations, the pending queue, and chat stay empty. Login form. |
-
-Build history and remaining milestones: **[MILESTONES.md](./MILESTONES.md)** (M01–M25 complete; M26 next).
-
-## Demo accounts (seed)
-
-Three canonical scenarios; refund windows are evaluated against **2026-10-22** in tests and scripts:
-
-| Account | Scenario |
-| --- | --- |
-| `acct-annual-ok` | Annual charge within the 30-day window — eligible to queue. |
-| `acct-monthly-late` | Monthly charge outside the 14-day window — rejected, no row. |
-| `acct-double` | Two successful charges on one invoice — duplicate charge eligible to queue. |
-
-Detailed rule coverage: `lib/refundRules.test.ts` and M01 in [MILESTONES.md](./MILESTONES.md).
+`chat_token_usage` stores prompt, completion, and total tokens for a chat turn. It does not store the message text or the API key.
 
 ## Local setup
 
 1. `npm install`
-2. Copy `.env.example` to `.env` and configure (server-only variables; do not expose secrets via `NEXT_PUBLIC_`):
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — read API.
-   - `DATABASE_URL` — Postgres **session** pooler on **port 5432** (not 6543 transaction pooler). Percent-encode special characters in the password.
-   - `DEMO_PASSWORD`, `SESSION_SECRET` — shared demo login, and the key that signs the HttpOnly session cookie.
-
-Apply schema to a linked project:
+2. Copy `.env.example` to `.env` and fill in the same server variables as production.
+3. Apply migrations to the linked project when a new file is added:
 
 ```bash
 supabase migration list --linked
-supabase db push    # when a new migration file is ready
+supabase db push
 ```
 
-Optional local Postgres: `supabase start` / `supabase stop`. Development in this repository typically uses a hosted linked project.
-
-## Commands
+Policy search needs embeddings. After the policy migration, `npm run embed:policy` fills the vector column. The linked project already has them.
 
 ```bash
-npm run dev                   # local Next.js app; open /workspace
-npm test                      # refund rules (no database)
-npm run test:integration      # queueRefund against Postgres (requires DATABASE_URL)
-npm run print:acct-double     # read acct-double from Postgres
-npm run queue:refund-cases    # manual write-path scenarios on 2026-10-22
-npm run eval                  # M25 scorecard against Postgres and OpenAI
+npm run dev                   # http://localhost:3000
+npm test                      # refund rules and other unit tests, no database
+npm run test:integration      # queueRefund against Postgres
+npm run eval                  # 45-case scorecard
 ```
 
-`queue:refund-cases` leaves two pending rows (`ch_annual_1`, `ch_double_dup`) unless cleared. Integration tests delete pending rows for `ch_annual_1`, `ch_monthly_1`, and `ch_double_dup` before and after each run.
+## Demo accounts
+
+Refund windows in tests and `npm run eval` use **2026-10-22**:
+
+| Account | Customer | Scenario |
+| --- | --- | --- |
+| `acct-annual-ok` | Priya Shah | Annual charge `ch_annual_1` within 30 days. Eligible to queue. |
+| `acct-monthly-late` | Tom Ellis | Monthly charge `ch_monthly_1` outside 14 days. Rejected, no row. |
+| `acct-double` | Amina Okonkwo | Two successful charges on one invoice. The duplicate can be queued. |
 
 ## Project layout
 
-Business logic resides in **`lib/`**. **`app/`** is the Next.js shell: a root layout, a plain home page, the `/workspace` route, the demo login, and the account read route. **`components/`** holds the two-column workspace (chat on the left, context panels on the right), the account lookup that fills Account and Charges, and the login form. Session sign and verify live in **`lib/session.ts`**. Integration tests live under **`tests/integration/`**. Conventions and folder introduction order: **Project layout** in [MILESTONES.md](./MILESTONES.md).
+| Path | What it is |
+| --- | --- |
+| `app/` | Pages and route handlers. They check the session, then call `lib/`. |
+| `components/` | Workspace UI. It does not decide a refund. |
+| `lib/` | Rules, tools, database, policy search, audit, token counts. |
+| `mcp/server.js` | Local stdio MCP server. |
+| `supabase/migrations/` | Schema, seed, grants. |
+| `tests/evals/scorecard.ts` | The 45-case set. |
+| `docs/screenshots/` | Production screenshots for the monthly-late case. |
+
+Build history: [MILESTONES.md](./MILESTONES.md). M01–M26 are done.
