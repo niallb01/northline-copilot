@@ -17,8 +17,11 @@ export const EMBEDDING_DIMENSIONS = 1536;
 
 const EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
 
-/** Nearest passages to return after the similarity cutoff. */
+/** Nearest passages to return after the similarity cutoff (CLI and evals). */
 const DEFAULT_MATCH_COUNT = 5;
+
+/** Chat and MCP search_policy return only the best-matching passage for operators. */
+export const OPERATOR_POLICY_MATCH_COUNT = 1;
 
 /**
  * Minimum cosine similarity (1 minus cosine distance) for a stored passage to count.

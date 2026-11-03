@@ -6,7 +6,7 @@
  * list_charges calls listCharges after that same lookup, so a missing account
  * is a clear not-found error rather than an empty list. preview_refund calls
  * previewRefund, which uses the refund rules and appends nothing. search_policy
- * calls searchPolicy and returns stored passages or a miss message.
+ * calls searchPolicy and returns the single best-matching passage or a miss message.
  * request_refund is not a tool: that call is logged as a rejection and does not
  * insert a pending row. This file does not call OpenAI for chat, stream a reply,
  * call queueRefund, or insert a pending row. pending_row_created is false.
@@ -20,7 +20,7 @@ import {
   writeAuditLog,
   type AuditWriter,
 } from "./audit";
-import { searchPolicy, type PolicySearchResult } from "./policy";
+import { OPERATOR_POLICY_MATCH_COUNT, searchPolicy, type PolicySearchResult } from "./policy";
 import { listPendingForAccount } from "./refunds";
 import { previewRefund } from "./refundRules";
 import type { Account, Charge, PendingRefund } from "./types";
@@ -146,7 +146,7 @@ async function runSearchPolicy(args: unknown): Promise<ToolResult> {
   }
 
   try {
-    const result = await searchPolicy(parsed.query);
+    const result = await searchPolicy(parsed.query, OPERATOR_POLICY_MATCH_COUNT);
     if (process.env.NODE_ENV === "development") {
       console.log("search_policy result:", {
         passages: result.passages.length,
