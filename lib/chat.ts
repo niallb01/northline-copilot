@@ -2,7 +2,9 @@
  * Asks OpenAI for a chat completion. When the model requests get_account,
  * list_charges, preview_refund, or search_policy, this file runs that tool
  * through the dispatcher and sends the result back so the model can write the
- * final sentence. Charge amounts in that tool JSON are pounds. A policy quote counts only when its document id and chunk id
+ * final sentence. A charge-list question is answered from list_charges, and a policy
+ * answer uses the full stored passage rather than a short quote. Charge amounts
+ * in that tool JSON are pounds. A policy quote counts only when its document id and chunk id
  * were in that turn's search_policy result and the quote is inside that passage.
  * When that search returns no passage, the reply is a refusal and no quote is
  * kept. An eligible preview is returned separately as a proposal for the route
@@ -18,13 +20,14 @@
 import { collectPolicySourcePaths, formatPolicySourcePath, type PolicyPassage } from "./policy";
 import {
   POLICY_REFUSAL,
+  plainPolicyText,
   settlePolicyCitations,
   type PolicyCitation,
   type PolicyPassageView,
 } from "./policyCitations";
 import { resolveAccountId } from "./accounts";
 import { seedAccounts } from "./seed";
-import type { Account } from "./types";
+import type { Account, Charge } from "./types";
 import { dispatchTool, eligibleProposal, type EligibleProposal, type ToolResult } from "./tools";
 
 const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
@@ -327,6 +330,16 @@ export function policySearchIntent(message: string): { query: string } | null {
   return { query: text.slice(0, 500) };
 }
 
+/** When the operator asks for the charges on a known account, list them before the model can invent a miss. */
+export function listChargesIntent(message: string): { account_id: string } | null {
+  if (previewRefundIntent(message) || policySearchIntent(message)) return null;
+  const text = message.trim();
+  if (!text || !/\bcharges\b/i.test(text)) return null;
+  const accountId = accountIdFromOperatorMessage(text);
+  if (!accountId) return null;
+  return { account_id: accountId };
+}
+
 export async function completeChatTurn(
   message: string,
   history: readonly ChatTurn[] = [],
@@ -346,6 +359,11 @@ export async function completeChatTurn(
   const forcedPolicy = policySearchIntent(message);
   if (forcedPolicy) {
     return completePolicySearchTurn(message, history, forcedPolicy, client, apiKey, runTool);
+  }
+
+  const forcedCharges = listChargesIntent(message);
+  if (forcedCharges) {
+    return completeListChargesTurn(forcedCharges, runTool);
   }
 
   const messages: ProviderMessage[] = [
@@ -618,6 +636,73 @@ async function completePolicySearchTurn(
   };
 }
 
+async function completeListChargesTurn(
+  args: { account_id: string },
+  runTool: ChatToolRunner,
+): Promise<ChatTurnResult> {
+  if (process.env.NODE_ENV === "development") {
+    console.log("POST /api/chat list_charges forced from message:", args);
+  }
+
+  const toolCalls: ChatToolCall[] = [{ name: "list_charges", arguments: { account_id: args.account_id } }];
+  let result: ToolResult;
+  try {
+    result = await runTool("list_charges", { account_id: args.account_id });
+  } catch {
+    result = { ok: false, tool: "list_charges", error: "Could not run list_charges." };
+  }
+
+  const reply =
+    result.ok && result.tool === "list_charges"
+      ? describeCharges(args.account_id, result.result)
+      : "Could not retrieve the charges for that account.";
+
+  return {
+    ok: true,
+    reply,
+    usage: null,
+    toolCalls,
+    ...emptyPolicyFields(),
+    proposal: null,
+  };
+}
+
+function describeCharges(accountId: string, charges: readonly Charge[]): string {
+  const account = seedAccounts.find((row) => row.id === accountId);
+  const who = account
+    ? `${account.customerName} on ${account.accountNumber}`
+    : "That account";
+  if (charges.length === 0) return `${who} has no charges.`;
+
+  const sameInvoice =
+    charges.length > 1 && charges.every((charge) => charge.invoiceId === charges[0]?.invoiceId);
+  const sameAmountAndDate =
+    charges.every(
+      (charge) => charge.amount === charges[0]?.amount && charge.date === charges[0]?.date,
+    );
+  const summary =
+    charges.length === 1
+      ? `one charge of ${formatGbp(charges[0].amount)} on ${formatChargeDate(charges[0].date)}`
+      : sameAmountAndDate
+        ? `${charges.length} charges of ${formatGbp(charges[0].amount)} each on ${formatChargeDate(charges[0].date)}`
+        : `${charges.length} charges: ${charges
+            .map((charge) => `${formatGbp(charge.amount)} on ${formatChargeDate(charge.date)}`)
+            .join(", ")}`;
+  const duplicate = sameInvoice ? ", duplicate lines on the same invoice" : "";
+  return `${who} has ${summary}${duplicate}.`;
+}
+
+function formatChargeDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) return isoDate;
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
 type ProviderMessage =
   | { role: "system" | "user" | "assistant"; content: string }
   | {
@@ -771,11 +856,36 @@ function checkedPolicyReply(
     });
   }
   return {
-    reply: settled.reply,
+    reply: operatorPolicyReply(settled.reply, settled.citations, passages),
     policySources: collectPolicySourcePaths(passages),
     policyPassages: toPolicyPassageViews(passages),
     citations: settled.citations,
   };
+}
+
+function operatorPolicyReply(
+  settledReply: string,
+  citations: readonly PolicyCitation[],
+  passages: readonly PolicyPassage[],
+): string {
+  const chosen: PolicyPassage[] = [];
+  const seen = new Set<string>();
+  const keys =
+    citations.length > 0
+      ? citations.map((citation) => ({ documentId: citation.documentId, chunkId: citation.chunkId }))
+      : passages.slice(0, 1);
+  for (const item of keys) {
+    const key = `${item.documentId}\0${item.chunkId}`;
+    if (seen.has(key)) continue;
+    const passage = passages.find(
+      (row) => row.documentId === item.documentId && row.chunkId === item.chunkId,
+    );
+    if (!passage) continue;
+    seen.add(key);
+    chosen.push(passage);
+  }
+  if (chosen.length === 0) return settledReply;
+  return chosen.map((passage) => plainPolicyText(passage.passage)).join("\n\n");
 }
 
 function toPolicyPassageViews(passages: readonly PolicyPassage[]): PolicyPassageView[] {

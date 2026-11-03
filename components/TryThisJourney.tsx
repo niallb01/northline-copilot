@@ -52,9 +52,9 @@ export function TryThisJourney({
           </li>
         </ol>
         <p className={styles.outcome}>
-          Expect a <strong>rejected</strong> refund preview, a <strong>cited</strong> policy
-          answer, and an empty pending queue. Eligibility is decided in code, not by the model
-          alone.
+          Expect a <strong>rejected</strong> refund preview and a <strong>cited</strong> policy
+          answer. The pending queue changes only when you confirm an eligible refund. Eligibility
+          is decided in code, not by the model alone.
         </p>
       </div>
     </Panel>

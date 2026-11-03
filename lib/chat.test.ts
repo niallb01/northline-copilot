@@ -16,6 +16,7 @@ import {
   DEFAULT_CHAT_MODEL,
   MAX_HISTORY_TURNS,
   MAX_MESSAGE_LENGTH,
+  listChargesIntent,
   policySearchIntent,
   previewRefundIntent,
   readChatRequest,
@@ -350,26 +351,15 @@ describe("completeChatTurn", () => {
     });
   });
 
-  it("runs list_charges and sends the charge lines back before the final sentence", async () => {
-    const bodies: Array<Record<string, unknown>> = [];
+  it("answers a charge-list question from list_charges without asking the model", async () => {
+    let fetches = 0;
     let ran = 0;
     const result = await completeChatTurn(
-      "What are the charges on acct-double?",
+      "What are the charges on NL-1048293?",
       [],
-      client(async (_url, init) => {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        bodies.push(body);
-        if (bodies.length === 1) return toolCallResponse("list_charges", { account_id: "acct-double" });
-        return jsonResponse(200, {
-          choices: [
-            {
-              message: {
-                content: "acct-double has charges ch_double_1 and ch_double_dup.",
-              },
-            },
-          ],
-          usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
-        });
+      client(async () => {
+        fetches += 1;
+        return jsonResponse(200, { choices: [{ message: { content: "I couldn't retrieve the charges." } }] });
       }),
       async (name, args) => {
         ran += 1;
@@ -399,47 +389,16 @@ describe("completeChatTurn", () => {
     );
 
     assert.equal(ran, 1);
-    assert.equal(bodies.length, 2);
-    assert.deepEqual(toolNames(bodies[0]), [
-      "get_account",
-      "list_charges",
-      "preview_refund",
-      "search_policy",
-    ]);
-    assert.equal("tools" in (bodies[1] ?? {}), false);
-    assert.equal(JSON.stringify(bodies).includes("request_refund"), false);
-    assert.equal(JSON.stringify(bodies).includes("search_policy"), true);
-    assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
-
-    const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
-    assert.match(firstMessages[0]?.content ?? "", /list_charges/);
-    assert.equal(firstMessages.at(-1)?.content, "What are the charges on acct-double?");
-
-    const secondMessages = bodies[1]?.messages as Array<{
-      role: string;
-      tool_call_id?: string;
-      content?: string | null;
-      tool_calls?: Array<{ function: { name: string } }>;
-    }>;
-    assert.equal(secondMessages.at(-2)?.role, "assistant");
-    assert.equal(secondMessages.at(-2)?.tool_calls?.[0]?.function.name, "list_charges");
-    assert.equal(secondMessages.at(-1)?.role, "tool");
-    assert.equal(secondMessages.at(-1)?.tool_call_id, "call_1");
-    assert.match(secondMessages.at(-1)?.content ?? "", /£149\.00/);
-    assert.equal((secondMessages.at(-1)?.content ?? "").includes('"$'), false);
-    assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_1/);
-    assert.match(secondMessages.at(-1)?.content ?? "", /ch_double_dup/);
-
-    assert.deepEqual(result, {
-      ok: true,
-      reply: "acct-double has charges ch_double_1 and ch_double_dup.",
-      usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
-      toolCalls: [{ name: "list_charges", arguments: { account_id: "acct-double" } }],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: null,
-    });
+    assert.equal(fetches, 0);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      result.reply,
+      "Amina Okonkwo on NL-1048293 has 2 charges of £149.00 each on 23 Jul 2026, duplicate lines on the same invoice.",
+    );
+    assert.equal(result.reply.includes("$"), false);
+    assert.deepEqual(result.toolCalls, [{ name: "list_charges", arguments: { account_id: "acct-double" } }]);
+    assert.equal(result.proposal, null);
   });
 
   it("forces preview_refund when the user message names both ids", async () => {
@@ -734,10 +693,50 @@ describe("completeChatTurn", () => {
       },
     ]);
     assert.deepEqual(result.policySources, ["policy-desk/refunds.md#refunds-annual-plans"]);
-    assert.equal(result.reply.includes(annual), true);
+    assert.equal(result.reply, annual);
     assert.equal(result.reply.includes("14 days"), false);
     assert.equal(result.reply.includes("<cite"), false);
     assert.equal(result.proposal, null);
+  });
+
+  it("answers a refund window with the full stored passage, not only the cited span", async () => {
+    const stored =
+      "An annual plan can be refunded in full when the request arrives within 30 days of the charge. After day 30 the annual charge is not refunded.";
+    const result = await completeChatTurn(
+      "What is the annual plan refund window?",
+      [],
+      client(async () =>
+        jsonResponse(200, {
+          choices: [
+            {
+              message: {
+                content:
+                  '<cite document="refunds" chunk="refunds-annual-plans">within 30 days of the charge</cite>',
+              },
+            },
+          ],
+        }),
+      ),
+      async () => ({
+        ok: true,
+        tool: "search_policy",
+        result: {
+          passages: [
+            {
+              documentId: "refunds",
+              chunkId: "refunds-annual-plans",
+              sourceTitle: "Refunds",
+              passage: stored,
+            },
+          ],
+          message: null,
+        },
+      }),
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.reply, stored);
+    assert.match(result.reply, /After day 30/);
   });
 
   it("refuses when search_policy returns no passage and keeps no invented quote", async () => {
@@ -792,6 +791,15 @@ describe("policySearchIntent", () => {
     );
     assert.equal(policySearchIntent("Look up acct-monthly-late."), null);
     assert.equal(policySearchIntent("Refund the duplicate charge."), null);
+  });
+});
+
+describe("listChargesIntent", () => {
+  it("lists charges for a named account and ignores a refund question", () => {
+    assert.deepEqual(listChargesIntent("What are the charges on NL-1048293?"), {
+      account_id: "acct-double",
+    });
+    assert.equal(listChargesIntent("Can I refund Tom Ellis's September charge?"), null);
   });
 });
 
