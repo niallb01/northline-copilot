@@ -8,7 +8,9 @@
  * id and chunk id were in that turn's tool result and the quote is inside that
  * passage. When the preview would be pending, it stores that proposal on an
  * HttpOnly cookie and returns the account id, charge id, and action so the
- * operator can confirm. The JSON body has no confirmation token. Without the
+ * operator can confirm. A successful turn with no eligible preview clears
+ * that cookie, so an earlier customer cannot still be confirmed. The JSON
+ * body has no confirmation token. Without the
  * session cookie it returns 401 and no reply. When the provider response includes
  * usage, it stores that turn's prompt, completion, and total tokens. The API key
  * and the system prompt stay on the server. This route does not store the
@@ -149,8 +151,15 @@ export async function POST(request: Request) {
       });
       console.log("POST /api/chat confirm offer:", offer);
     }
-  } else if (process.env.NODE_ENV === "development") {
-    console.log("POST /api/chat confirm offer: none");
+  } else {
+    response.cookies.set(PROPOSAL_COOKIE_NAME, "", {
+      ...proposalCookieOptions(),
+      maxAge: 0,
+    });
+    if (process.env.NODE_ENV === "development") {
+      console.log("POST /api/chat proposal cleared");
+      console.log("POST /api/chat confirm offer: none");
+    }
   }
   return response;
 }

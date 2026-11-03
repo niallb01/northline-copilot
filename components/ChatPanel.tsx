@@ -5,8 +5,9 @@
  * list_charges, preview_refund, or search_policy call with its arguments, and
  * the model's reply. Passages from that turn's search_policy result are handed
  * to the citations panel. When the reply includes an eligible proposal, it
- * tells the workspace so a person can confirm. The transcript lives in React
- * state on this page. It does not call OpenAI itself, run a tool, decide which
+ * tells the workspace so a person can confirm. A successful reply with no
+ * eligible proposal clears that offer. The transcript lives in React state
+ * on this page. It does not call OpenAI itself, run a tool, decide which
  * quote counts, store the thread on the server, read the session cookie, or
  * confirm a refund.
  */
@@ -14,7 +15,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { ConfirmOffer } from "../lib/confirmOffer";
+import { confirmOfferFromProposal, type ConfirmOffer } from "../lib/confirmOffer";
 import type { PolicyCitation, PolicyPassageView } from "../lib/policyCitations";
 import { Panel } from "./Panel";
 import styles from "./ChatPanel.module.css";
@@ -125,10 +126,11 @@ function readConfirmOffer(value: unknown): ConfirmOffer | null {
   const row = proposal as Record<string, unknown>;
   if (row.action !== "request_refund") return null;
   if (typeof row.accountId !== "string" || typeof row.chargeId !== "string") return null;
-  const accountId = row.accountId.trim();
-  const chargeId = row.chargeId.trim();
-  if (!accountId || !chargeId) return null;
-  return { accountId, chargeId, action: "request_refund" };
+  return confirmOfferFromProposal({
+    accountId: row.accountId,
+    chargeId: row.chargeId,
+    action: "request_refund",
+  });
 }
 
 function formatArguments(value: unknown): string {
@@ -146,7 +148,7 @@ export function ChatPanel({
   pendingPrompt,
   onPendingPromptApplied,
 }: {
-  onConfirmOffer?: (offer: ConfirmOffer) => void;
+  onConfirmOffer?: (offer: ConfirmOffer | null) => void;
   onPolicyPassages?: (passages: PolicyPassageView[]) => void;
   /** Filled into the composer from Try this demo; cleared after apply. */
   pendingPrompt?: string | null;
@@ -261,12 +263,10 @@ export function ChatPanel({
       }
       appendEntry({ kind: "assistant", text: reply.reply });
       onPolicyPassages?.(reply.policyPassages);
-      if (offer) {
-        if (process.env.NODE_ENV === "development") {
-          console.log("Workspace confirm offer set:", offer);
-        }
-        onConfirmOffer?.(offer);
+      if (process.env.NODE_ENV === "development") {
+        console.log(offer ? "Workspace confirm offer set:" : "Workspace confirm offer cleared", offer);
       }
+      onConfirmOffer?.(offer);
     } catch {
       setError("Could not send that message.");
     } finally {

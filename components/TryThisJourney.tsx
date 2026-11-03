@@ -21,15 +21,17 @@ export function TryThisJourney({
     <Panel title="Try this demo">
       <div className={styles.content}>
         <p className={styles.lead}>
-          About one minute. You do not need internal account or charge ids in chat.
+          About one minute. Use customer names and dates in chat — not internal account or charge
+          ids.
         </p>
         <ol className={styles.steps}>
           <li>
-            Under <strong>Demo customers</strong> below, click <strong>Tom Ellis</strong> (monthly
-            plan, September charge).
+            Under <strong>Demo customers</strong>, click <strong>Tom Ellis</strong> so Account and
+            Charges show his monthly September line on the right.
           </li>
           <li>
-            Ask whether his September refund is allowed.
+            In chat, ask whether Tom’s September refund is allowed (the copilot does not see which
+            customer you clicked — name him in the message).
             <button
               className={styles.exampleButton}
               type="button"

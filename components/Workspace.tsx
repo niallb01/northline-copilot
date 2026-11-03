@@ -1,7 +1,8 @@
 /**
  * The operator workspace: chat on the left and account context on the right.
  * Chat sends a message to /api/chat and shows the model reply. An eligible
- * preview is held here so the confirm control can post it. Account and Charges
+ * preview is held here so the confirm control can post it, and the next
+ * successful reply with no eligible preview clears it. Account and Charges
  * show facts from the account route. The pending queue lists refunds waiting
  * for review and can mark one reviewed. Policy citations list the passages
  * search_policy returned for the latest turn. This component does not call

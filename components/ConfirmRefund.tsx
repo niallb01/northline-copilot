@@ -136,11 +136,16 @@ export function ConfirmRefund({
         {offer ? (
           <>
             <p className={styles.lead}>
-              Queue a pending refund for this charge. This does not send money.
+              Queue a pending refund for review. This does not send money.
             </p>
-            <p className={styles.ids}>
-              {offer.accountId} · {offer.chargeId}
-            </p>
+            <div className={styles.summary}>
+              <p className={styles.customer}>{offer.customerName}</p>
+              <p className={styles.meta}>
+                {offer.accountNumber}
+                {offer.planLabel ? ` · ${offer.planLabel}` : null}
+              </p>
+              <p className={styles.charge}>{offer.chargeSummary}</p>
+            </div>
             <button
               className={styles.button}
               type="button"

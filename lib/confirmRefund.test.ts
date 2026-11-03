@@ -119,18 +119,14 @@ describe("confirm refund", () => {
 
   it("does not offer confirm for a rejected preview", () => {
     assert.equal(confirmOfferFromProposal(null), null);
-    assert.deepEqual(
-      confirmOfferFromProposal({
-        accountId: "acct-double",
-        chargeId: "ch_double_dup",
-        action: "request_refund",
-      }),
-      {
-        accountId: "acct-double",
-        chargeId: "ch_double_dup",
-        action: "request_refund",
-      },
-    );
+    const offer = confirmOfferFromProposal({
+      accountId: "acct-double",
+      chargeId: "ch_double_dup",
+      action: "request_refund",
+    });
+    assert.equal(offer?.accountId, "acct-double");
+    assert.equal(offer?.chargeId, "ch_double_dup");
+    assert.equal(offer?.customerName, "Amina Okonkwo");
   });
 
   it("does not queue without a session, even when a proposal matches", async () => {

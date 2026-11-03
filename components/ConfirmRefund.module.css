@@ -3,7 +3,6 @@
 }
 
 .lead,
-.ids,
 .note,
 .rejected,
 .detail {
@@ -16,10 +15,37 @@
   color: #4b5563;
 }
 
-.ids {
-  margin-top: 0.45rem;
-  font-size: 0.8125rem;
+.summary {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.customer,
+.meta,
+.charge {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.customer {
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: #111827;
+}
+
+.meta {
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+
+.charge {
+  margin-top: 0.35rem;
+  font-size: 0.875rem;
+  color: #374151;
 }
 
 .button {

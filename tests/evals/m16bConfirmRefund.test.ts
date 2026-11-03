@@ -109,11 +109,10 @@ describe("M16b confirm refund", { concurrency: 1, timeout: 60_000 }, () => {
     if (result.ok && result.tool === "preview_refund") {
       assert.equal(result.result.status, "pending");
     }
-    assert.deepEqual(confirmOfferFromProposal(eligibleProposal(result)), {
-      accountId: "acct-double",
-      chargeId: "ch_double_dup",
-      action: "request_refund",
-    });
+    const offer = confirmOfferFromProposal(eligibleProposal(result));
+    assert.equal(offer?.accountId, "acct-double");
+    assert.equal(offer?.chargeId, "ch_double_dup");
+    assert.equal(offer?.customerName, "Amina Okonkwo");
     assert.deepEqual(await counts(), beforeCounts);
     duplicateProposal = jar.get(PROPOSAL_COOKIE_NAME) ?? "";
     assert.ok(duplicateProposal);
