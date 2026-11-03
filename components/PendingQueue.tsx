@@ -1,7 +1,8 @@
 /**
  * Pending queue panel. The browser asks GET /api/pending-refunds and lists
- * rows still waiting. Mark reviewed posts the account id and charge id to
- * /api/pending-refunds/review and shows the returned status. It reloads when
+ * rows still waiting, using the customer name, amount, and date. Mark reviewed
+ * posts the account id and charge id to /api/pending-refunds/review and shows
+ * the returned status. Those ids stay off the panel. It reloads when
  * a confirm queues a new row. It does not decide eligibility, send money, or
  * read the session cookie.
  */
@@ -246,9 +247,6 @@ export function PendingQueue() {
                   <p className={styles.meta}>
                     {formatMoney(row.amount)} · {formatChargeDate(row.chargeDate)} ·{" "}
                     {formatPlan(row.plan)}
-                  </p>
-                  <p className={styles.ids}>
-                    {row.chargeId} · {row.accountId}
                   </p>
                   <p className={styles.reason}>{row.reason}</p>
                   {row.status === "pending" ? (
