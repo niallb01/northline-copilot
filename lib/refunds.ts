@@ -1,8 +1,8 @@
 /**
  * Refund queue against Postgres. queueRefund locks the charge, loads the account,
  * charges, and pending rows, then calls requestRefund. It inserts one pending row
- * only when that function accepts. listPendingRefunds reads pending and reviewed
- * rows for the operator queue. listPendingForAccount only reads rows still waiting.
+ * only when that function accepts. listPendingRefunds reads rows still waiting.
+ * listPendingForAccount uses the same pending filter.
  * markRefundReviewed sets one of those rows to reviewed. A unique-index clash on the
  * same charge comes back as already pending and leaves the table unchanged. Refund
  * windows stay in lib/refundRules.ts. None of this sends money or writes a payment.
@@ -66,11 +66,8 @@ export async function listPendingRefunds(): Promise<PendingRefund[]> {
   return withClient(async (client) => {
     const result = await client.query<QueueRefundRow>(
       `${QUEUE_REFUND_SELECT}
-       where pending_refunds.status in ('pending', 'reviewed')
-       order by
-         case when pending_refunds.status = 'pending' then 0 else 1 end,
-         pending_refunds.started_at asc,
-         pending_refunds.id asc`,
+       where pending_refunds.status = 'pending'
+       order by pending_refunds.started_at asc, pending_refunds.id asc`,
     );
     return result.rows.map((row) => toQueueRefund(row));
   });

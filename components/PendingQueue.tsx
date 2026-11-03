@@ -1,8 +1,7 @@
 /**
  * Pending queue panel. The browser asks GET /api/pending-refunds and lists
- * pending and reviewed rows, using the customer name, amount, and date. Mark reviewed
- * posts the account id and charge id to /api/pending-refunds/review and shows
- * the returned status. Those ids stay off the panel, including ids already
+ * rows still waiting for review. Mark reviewed posts the account id and charge id
+ * to /api/pending-refunds/review and removes that row from the list. Those ids stay off the panel, including ids already
  * stored in an older duplicate-charge reason. It reloads when
  * a confirm queues a new row. It does not decide eligibility, send money, or
  * read the session cookie.
@@ -76,7 +75,7 @@ function noticeFor(status: LoadStatus, message: string | null): string {
     case "error":
       return message ?? "Could not load the pending queue.";
     default:
-      return "No refunds are waiting for review. To demo a row, run npm run queue:refund-cases in the project folder, then reload this page. Scroll down to the Pending queue panel — Mark reviewed appears on each pending row only.";
+      return "No refunds are waiting for review. Mark reviewed removes a row from this list. To add one, confirm an eligible refund in chat, then reload.";
   }
 }
 
@@ -197,12 +196,13 @@ export function PendingQueue() {
       }
 
       setRows((current) =>
-        current.map((item) =>
-          item.accountId === body.accountId &&
-          item.chargeId === body.chargeId &&
-          item.status === "pending"
-            ? body
-            : item,
+        current.filter(
+          (item) =>
+            !(
+              item.accountId === body.accountId &&
+              item.chargeId === body.chargeId &&
+              item.status === "pending"
+            ),
         ),
       );
       setStatus("ready");

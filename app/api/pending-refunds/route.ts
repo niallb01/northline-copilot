@@ -1,6 +1,6 @@
 /**
  * GET /api/pending-refunds. With a valid demo session cookie, returns pending
- * and reviewed refund rows by calling listPendingRefunds in lib/. Without that cookie it
+ * refund rows by calling listPendingRefunds in lib/. Without that cookie it
  * returns 401 and no queue JSON. It does not mark a row reviewed, send money,
  * or call a model.
  */
