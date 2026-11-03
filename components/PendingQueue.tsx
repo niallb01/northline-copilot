@@ -1,6 +1,6 @@
 /**
  * Pending queue panel. The browser asks GET /api/pending-refunds and lists
- * rows still waiting, using the customer name, amount, and date. Mark reviewed
+ * pending and reviewed rows, using the customer name, amount, and date. Mark reviewed
  * posts the account id and charge id to /api/pending-refunds/review and shows
  * the returned status. Those ids stay off the panel, including ids already
  * stored in an older duplicate-charge reason. It reloads when
