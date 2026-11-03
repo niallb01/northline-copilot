@@ -56,8 +56,9 @@ describe("refund rules for the three seed accounts", () => {
 
     assert.equal(result.started, true);
     assert.equal(result.status, "pending");
-    assert.match(result.reason, /second successful charge on invoice in_double_1/);
-    assert.match(result.reason, /original charge ch_double_1/);
+    assert.match(result.reason, /second successful charge on the same invoice/);
+    assert.equal(result.reason.includes("ch_double"), false);
+    assert.equal(result.reason.includes("in_double"), false);
     assert.equal(pending.length, 1);
     assert.equal(pending[0].chargeId, "ch_double_dup");
   });
@@ -145,7 +146,7 @@ describe("previewRefund", () => {
     });
 
     assert.equal(result.status, "pending");
-    assert.match(result.reason, /second successful charge on invoice in_double_1/);
+    assert.match(result.reason, /second successful charge on the same invoice/);
     assert.match(result.reason, /would be pending/);
     assert.equal(pending.length, 0);
   });

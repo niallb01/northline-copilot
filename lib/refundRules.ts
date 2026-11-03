@@ -151,7 +151,7 @@ function decideRefund(input: RequestRefundInput, mode: "write" | "preview"): Ref
   // PSEUDO: if this charge is a duplicate on the invoice → append pending and accept
   const original = originalCharge(account, charge.chargeId, charge.invoiceId);
   if (original) {
-    const reason = `Charge ${charge.chargeId} is a second successful charge on invoice ${charge.invoiceId} (original charge ${original.chargeId}). Refund started as pending for a person to approve. No money has been sent.`;
+    const reason = `This is a second successful charge on the same invoice. Refund started as pending for a person to approve. No money has been sent.`;
     return queueOrPreview(mode, pending, {
       accountId: account.id,
       customerName: account.customerName,

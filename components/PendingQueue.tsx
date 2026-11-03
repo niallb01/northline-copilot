@@ -2,7 +2,8 @@
  * Pending queue panel. The browser asks GET /api/pending-refunds and lists
  * rows still waiting, using the customer name, amount, and date. Mark reviewed
  * posts the account id and charge id to /api/pending-refunds/review and shows
- * the returned status. Those ids stay off the panel. It reloads when
+ * the returned status. Those ids stay off the panel, including ids already
+ * stored in an older duplicate-charge reason. It reloads when
  * a confirm queues a new row. It does not decide eligibility, send money, or
  * read the session cookie.
  */
@@ -15,6 +16,14 @@ import { Panel } from "./Panel";
 import styles from "./PendingQueue.module.css";
 
 type LoadStatus = "loading" | "ready" | "unauthorized" | "error";
+
+/** Older rows stored charge and invoice ids in the reason. The queue shows the fact without those ids. */
+function reasonForOperator(reason: string): string {
+  return reason.replace(
+    /^Charge \S+ is a second successful charge on invoice \S+ \(original charge \S+\)\./,
+    "This is a second successful charge on the same invoice.",
+  );
+}
 
 function rowKey(row: PendingRefund): string {
   return `${row.accountId}:${row.chargeId}`;
@@ -248,7 +257,7 @@ export function PendingQueue() {
                     {formatMoney(row.amount)} · {formatChargeDate(row.chargeDate)} ·{" "}
                     {formatPlan(row.plan)}
                   </p>
-                  <p className={styles.reason}>{row.reason}</p>
+                  <p className={styles.reason}>{reasonForOperator(row.reason)}</p>
                   {row.status === "pending" ? (
                     <button
                       className={styles.button}

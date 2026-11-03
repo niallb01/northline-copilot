@@ -67,8 +67,8 @@ describe("queueRefund persistence", { concurrency: 1 }, () => {
 
     assert.equal(result.started, true);
     assert.equal(result.status, "pending");
-    assert.match(result.reason, /second successful charge on invoice in_double_1/);
-    assert.match(result.reason, /original charge ch_double_1/);
+    assert.match(result.reason, /second successful charge on the same invoice/);
+    assert.equal(result.reason.includes("ch_double"), false);
     assert.equal(await countPending("acct-double", "ch_double_dup"), 1);
     const row = await pendingRow("acct-double", "ch_double_dup");
     assert.equal(row.invoice_id, "in_double_1");
