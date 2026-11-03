@@ -1,7 +1,7 @@
 /**
- * Policy citations panel. It lists each passage from this turn's search_policy
- * result: document id, chunk id, path, and the stored text. It does not search,
- * decide which quote counts, or queue a refund. The server already dropped any
+ * Policy citations panel. It lists the passage text from this turn's
+ * search_policy result. It does not show document ids, chunk ids, or file
+ * paths. It does not search, decide which quote counts, or queue a refund. The server already dropped any
  * quote that did not match one of these passages.
  */
 
@@ -19,16 +19,6 @@ export function PolicyCitations({ passages }: { passages: PolicyPassageView[] })
           <ol className={styles.list}>
             {passages.map((passage) => (
               <li key={`${passage.documentId}:${passage.chunkId}`} className={styles.row}>
-                <p className={styles.meta}>
-                  <span className={styles.label}>Document</span> {passage.documentId}
-                </p>
-                <p className={styles.meta}>
-                  <span className={styles.label}>Chunk</span> {passage.chunkId}
-                </p>
-                <p className={styles.path}>
-                  <span className={styles.label}>Path</span>{" "}
-                  <code className={styles.code}>{passage.path}</code>
-                </p>
                 <p className={styles.text}>{plainPolicyText(passage.text)}</p>
               </li>
             ))}

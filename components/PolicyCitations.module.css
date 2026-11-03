@@ -18,39 +18,15 @@
   border-radius: 8px;
 }
 
-.meta,
-.path,
 .text,
 .message {
   margin: 0;
   line-height: 1.45;
 }
 
-.meta,
-.path {
-  font-size: 0.75rem;
-  color: #4b5563;
-}
-
-.path {
-  margin-top: 0.2rem;
-}
-
-.label {
-  font-weight: 600;
-  color: #374151;
-}
-
-.code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-}
-
 .text {
-  margin-top: 0.55rem;
   font-size: 0.8125rem;
   color: #111827;
-  white-space: pre-wrap;
 }
 
 .message {
