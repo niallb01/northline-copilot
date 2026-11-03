@@ -6,7 +6,7 @@
  * list_charges calls listCharges after that same lookup, so a missing account
  * is a clear not-found error rather than an empty list. preview_refund calls
  * previewRefund, which uses the refund rules and appends nothing. search_policy
- * calls searchPolicy and returns the single best-matching passage or a miss message.
+ * calls searchPolicy and returns the two best-matching passages or a miss message.
  * request_refund is not a tool: that call is logged as a rejection and does not
  * insert a pending row. This file does not call OpenAI for chat, stream a reply,
  * call queueRefund, or insert a pending row. pending_row_created is false.

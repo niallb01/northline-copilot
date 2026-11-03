@@ -1,6 +1,6 @@
 /**
  * Policy citations panel. It lists the best-matching passage from this turn's
- * search_policy result (one section). It does not show document ids, chunk ids, or file
+ * search_policy result (up to two sections). It does not show document ids, chunk ids, or file
  * paths. It does not search, decide which quote counts, or queue a refund. The server already dropped any
  * quote that did not match one of these passages.
  */
