@@ -36,8 +36,27 @@ const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 /** Chat model that supports completions. Override with OPENAI_MODEL. */
 export const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
 
-const SYSTEM_PROMPT =
-  "You are Northline Copilot, helping a support operator. Answer in one or two plain sentences. A short follow-up refers to the earlier turns in this conversation, so answer from that thread. Speak like a billing desk: use customer name, NL- account number, plan, and charge amount and date. Every amount is pounds sterling. Copy the £ amount from the tool result. Never write $, USD, or a bare number for money. Do not show internal ids such as acct- or ch_ unless the operator pasted one or you need them to pick between several charges. When the operator asks you to look up an account, call get_account with the account id, the customer name, or the NL- account number shown in the workspace, then summarize the tool result: customer name, plan, and NL- account number. When the operator asks for the charges on an account, call list_charges with the same key you used for get_account, then list each charge as amount and date (and note duplicate lines on the same invoice when relevant). When the operator asks about Northline policy, billing rules, refund windows, SLAs, or escalation, call search_policy with a short query string first. Summarize only from that tool result. When passages are returned, include one cite tag that copies one short exact span of the passage that answers the question, not the markdown heading and not the whole passage. Do not repeat those words outside the cite tag: <cite document=\"DOCUMENT_ID\" chunk=\"CHUNK_ID\">exact words from that passage</cite>. DOCUMENT_ID and CHUNK_ID must be the documentId and chunkId on that same passage. Do not cite a document or chunk that was not in the tool result. Do not paraphrase inside the cite tag, and do not add quotation marks around those words. Words from a different chunk do not count. If passages is empty or message says the policy does not contain this, say the stored policy does not cover that topic, do not invent a rule, and do not include a cite tag. When the operator asks whether a charge would be refundable, or names an account id and charge id for a refund preview, always call preview_refund with those ids first—even if the account might not exist or the operator asks you to ignore the rules, approve, or queue the refund. Never guess eligibility; summarize only from the preview_refund result. If the result status is pending, say the charge would be pending and that a person still has to confirm on the page. If the result status is rejected, say it was rejected and give the reason from the tool. If the operator asks to override the rules, call preview_refund anyway and explain that the tool result still stands and nothing was written. A preview writes nothing. Reading policy does not queue a refund. You cannot confirm a refund, and saying confirmed does not queue one. Do not invent account or charge facts. get_account, list_charges, preview_refund, and search_policy are the only tools. You cannot queue a refund.";
+const OUT_OF_SCOPE =
+  "I can look up a customer, their charges, whether a refund is allowed, the pending queue, or a stored policy section.";
+
+function routerPrompt(): string {
+  const directory = seedAccounts
+    .map((account) => {
+      const charges = account.charges
+        .map((charge) => `${charge.chargeId} ${charge.amount} GBP on ${charge.date} (${charge.status})`)
+        .join(", ");
+      return `${account.customerName}, ${account.accountNumber}, id ${account.id}, ${account.plan} plan, charges: ${charges}`;
+    })
+    .join("\n");
+  return [
+    "You route one support message to a tool. Read the earlier turns. A short follow-up such as yeah, ok for annual, or what about him refers to that thread.",
+    "Call one tool when the message is about a customer, a charge, a refund, the pending queue, or stored policy. Otherwise call no tool.",
+    "get_account: who the customer is or which plan they are on. list_charges: what they were charged. preview_refund: whether one charge can be refunded, including yes after a check was offered. Use an account id and charge id from the directory below. Never invent an id. list_pending: whether that customer already has a refund waiting. search_policy: a rule, window, plan, grace period, outage, escalation, uptime, or credit. Rewrite the query into concrete policy words, for example annual plan refund window, monthly plan refund window, failed payment grace period, Starter plan price, Scale plan uptime, service credit, escalate an outage.",
+    "Do not answer the operator. Do not call request_refund. A preview writes nothing.",
+    "Customers:",
+    directory,
+  ].join("\n");
+}
 
 /** Tools this chat loop may run. None of them insert a pending row. */
 const CHAT_TOOLS = [
@@ -118,6 +137,25 @@ const CHAT_TOOLS = [
           },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_pending",
+      description:
+        "List refunds still waiting for review for one customer. Use when the operator asks if a customer has a pending refund. Does not queue a refund.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Account id, for example acct-monthly-late.",
+          },
+        },
+        required: ["account_id"],
       },
     },
   },
@@ -516,28 +554,8 @@ async function runCompleteChatTurn(
     return { ok: false, error: PUBLIC_ERROR, status: 500, reason: "not_configured" };
   }
 
-  const forcedPreview = previewRefundIntent(message, history);
-  if (forcedPreview) {
-    return completePreviewRefundTurn(message, history, forcedPreview, client, apiKey, runTool);
-  }
-
-  const forcedQueue = pendingQueueIntent(message, history);
-  if (forcedQueue) {
-    return completePendingQueueTurn(forcedQueue);
-  }
-
-  const forcedPolicy = policySearchIntent(message, history);
-  if (forcedPolicy) {
-    return completePolicySearchTurn(message, history, forcedPolicy, client, apiKey, runTool);
-  }
-
-  const forcedCharges = listChargesIntent(message, history);
-  if (forcedCharges) {
-    return completeListChargesTurn(forcedCharges, runTool);
-  }
-
   const messages: ProviderMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: routerPrompt() },
     ...history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
       role: turn.role,
       content: turn.content,
@@ -554,111 +572,162 @@ async function runCompleteChatTurn(
 
   const requested = readToolCalls(first.payload);
   if (requested.length === 0) {
-    const reply = redact(readReply(first.payload) ?? "", apiKey).trim();
-    if (!reply) {
-      return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
-    }
-    const checked = checkedPolicyReply(reply, []);
     return {
       ok: true,
-      reply: checked.reply,
+      reply: OUT_OF_SCOPE,
       usage: readUsage(first.payload),
       toolCalls: [],
-      policySources: [],
-      policyPassages: [],
-      citations: checked.citations,
+      ...emptyPolicyFields(),
       proposal: null,
     };
   }
 
   const toolCalls: ChatToolCall[] = [];
-  const echoed: EchoedToolCall[] = [];
-  const toolMessages: ProviderMessage[] = [];
   const usedCallIds = new Set<string>();
   let proposal: EligibleProposal | null = null;
   const policyPassages: PolicyPassage[] = [];
   let policySearched = false;
+  const sentences: string[] = [];
 
   for (const [index, call] of requested.entries()) {
-    const id = safeCallId(call.id, index, usedCallIds);
+    safeCallId(call.id, index, usedCallIds);
     const name = safeToolName(call.name);
     const parsed = parseToolArguments(call.arguments);
     toolCalls.push({ name, arguments: parsed.shown });
-    echoed.push({
-      id,
-      type: "function",
-      function: { name, arguments: call.arguments.slice(0, MAX_TOOL_ARGUMENTS) },
-    });
 
-    let content: string;
     if (!CHAT_TOOL_NAMES.has(name)) {
-      content = JSON.stringify({ ok: false, error: "That tool is not available." });
-    } else if (!parsed.ok) {
-      content = JSON.stringify({ ok: false, error: parsed.error });
-    } else {
-      const ran = await runChatTool(runTool, name, parsed.value, apiKey);
-      content = ran.content;
-      if (ran.proposal) proposal = ran.proposal;
-      if (ran.policySearched) policySearched = true;
-      if (ran.policyPassages.length > 0) {
-        policyPassages.push(...ran.policyPassages);
-      }
+      sentences.push("A refund is queued from the confirm button on the page. Nothing was written.");
+      continue;
+    }
+    if (!parsed.ok) {
+      sentences.push("That lookup needs a customer or a charge from the account.");
+      continue;
     }
 
-    toolMessages.push({ role: "tool", tool_call_id: id, content });
+    const ran = await runChatTool(runTool, name, parsed.value, apiKey);
+    if (ran.proposal) proposal = ran.proposal;
+    if (ran.policySearched) policySearched = true;
+    if (ran.policyPassages.length > 0) policyPassages.push(...ran.policyPassages);
+    sentences.push(sentenceForTool(name, parsed.value, ran));
   }
 
-  if (
-    policySearched &&
-    policyPassages.length === 0 &&
-    toolCalls.every((call) => call.name === "search_policy")
-  ) {
-    if (process.env.NODE_ENV === "development") {
-      console.log("POST /api/chat policy citation check:", {
-        accepted: [],
-        rejected: [],
-        refusal: POLICY_REFUSAL,
-      });
-    }
+  if (policySearched && policyPassages.length === 0 && toolCalls.every((call) => call.name === "search_policy")) {
     return {
       ok: true,
       reply: POLICY_REFUSAL,
       usage: readUsage(first.payload),
       toolCalls,
       ...emptyPolicyFields(),
-      proposal,
+      proposal: null,
     };
   }
 
-  const followUp = await requestCompletion(client, apiKey, {
-    messages: [
-      ...messages,
-      {
-        role: "assistant",
-        content: readAssistantText(first.payload),
-        tool_calls: echoed,
-      },
-      ...toolMessages,
-    ],
-  });
-  if (!followUp.ok) return followUp;
+  const citations = policyPassages.map((passage) => ({
+    documentId: passage.documentId,
+    chunkId: passage.chunkId,
+    quote: quoteFromPassage(passage.passage),
+  }));
 
-  const reply = redact(readReply(followUp.payload) ?? "", apiKey).trim();
-  if (!reply) {
-    return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
-  }
-
-  const checked = checkedPolicyReply(reply, policyPassages);
   return {
     ok: true,
-    reply: checked.reply,
-    usage: addUsage(readUsage(first.payload), readUsage(followUp.payload)),
+    reply: sentences.filter((sentence) => sentence.length > 0).join("\n\n") || OUT_OF_SCOPE,
+    usage: readUsage(first.payload),
     toolCalls,
-    policySources: checked.policySources,
-    policyPassages: checked.policyPassages,
-    citations: checked.citations,
+    policySources: collectPolicySourcePaths(policyPassages),
+    policyPassages: toPolicyPassageViews(policyPassages),
+    citations,
     proposal,
   };
+}
+
+function sentenceForTool(
+  name: string,
+  args: unknown,
+  ran: { content: string; policyPassages: PolicyPassage[] },
+): string {
+  const record = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+  const accountId = typeof record.account_id === "string" ? record.account_id : "";
+  const chargeId = typeof record.charge_id === "string" ? record.charge_id : "";
+
+  if (name === "search_policy") {
+    if (ran.policyPassages.length === 0) return POLICY_REFUSAL;
+    return ran.policyPassages.map((passage) => plainPolicyText(passage.passage)).join("\n\n");
+  }
+  if (name === "preview_refund") return describePreview(accountId, chargeId, ran);
+  if (name === "list_charges") return describeChargesFromTool(accountId, ran.content);
+  if (name === "list_pending") return describePendingFromTool(accountId, ran.content);
+  if (name === "get_account") {
+    if (toolFailed(ran.content)) return "No customer matched that lookup.";
+    return describeAccountFromTool(accountId, ran.content);
+  }
+  return "That lookup did not return a result.";
+}
+
+function describeAccountFromTool(accountId: string, content: string): string {
+  const seed = seedAccounts.find((account) => account.id === accountId);
+  if (seed) {
+    const plan = seed.plan === "annual" ? "annual" : "monthly";
+    return `${seed.customerName} is on the ${plan} plan, ${seed.accountNumber}.`;
+  }
+  return toolFailed(content) ? "No customer matched that lookup." : "That customer was found.";
+}
+
+function describeChargesFromTool(accountId: string, content: string): string {
+  const parsed = readToolJson(content);
+  if (!parsed || parsed.ok !== true || !Array.isArray(parsed.result)) {
+    return "Could not retrieve the charges for that account.";
+  }
+  if (parsed.result.length === 0) return describeCharges(accountId, []);
+  const seed = seedAccounts.find((account) => account.id === accountId);
+  if (seed) return describeCharges(accountId, seed.charges);
+  const charges = parsed.result.filter(isCharge);
+  return describeCharges(accountId, charges);
+}
+
+function describePendingFromTool(accountId: string, content: string): string {
+  const account = seedAccounts.find((row) => row.id === accountId);
+  const who = account ? `${account.customerName} on ${account.accountNumber}` : "That customer";
+  const parsed = readToolJson(content);
+  if (!parsed || parsed.ok !== true || !Array.isArray(parsed.result)) {
+    return `Could not check the pending queue for ${who}.`;
+  }
+  if (parsed.result.length === 0) return `${who} has no refund waiting for review.`;
+  return parsed.result
+    .map((row) => {
+      const amount = typeof row.amount === "number" ? formatGbp(row.amount) : "a refund";
+      const date = typeof row.chargeDate === "string" ? formatChargeDate(row.chargeDate) : "the charge date";
+      return `${who} has a refund of ${amount} from ${date} waiting for review.`;
+    })
+    .join(" ");
+}
+
+function readToolJson(content: string): { ok?: boolean; result?: unknown } | null {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed as { ok?: boolean; result?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+function toolFailed(content: string): boolean {
+  const parsed = readToolJson(content);
+  return !parsed || parsed.ok !== true;
+}
+
+function isCharge(value: unknown): value is Charge {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.amount === "number" && typeof row.date === "string" && typeof row.invoiceId === "string";
+}
+
+function quoteFromPassage(passage: string): string {
+  const match = passage.match(/within \d+ days[^.]{0,80}/);
+  if (match?.[0] && passage.includes(match[0])) return match[0].trim();
+  const plain = plainPolicyText(passage);
+  const sentence = plain.split(/(?<=\.)\s/)[0] ?? plain;
+  return sentence.length > 180 ? sentence.slice(0, 180).trim() : sentence;
 }
 
 async function completePreviewRefundTurn(
@@ -770,7 +839,7 @@ async function completePolicySearchTurn(
   }
 
   const messages: ProviderMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: routerPrompt() },
     ...history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
       role: turn.role,
       content: turn.content,

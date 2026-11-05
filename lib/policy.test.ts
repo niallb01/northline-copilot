@@ -64,6 +64,7 @@ describe("policyRouteKeys", () => {
       ["they want money off because the service was down", "plans-and-sla-service-credits"],
       ["when does the refund actually hit their bank?", "refunds-how-the-money-is-returned"],
       ["what is our refund policy?", "refunds-monthly-plans"],
+      ["what is refund window for annual accounts", "refunds-annual-plans"],
     ];
     for (const [question, chunkId] of cases) {
       const keys = policyRouteKeys(question);

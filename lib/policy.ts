@@ -165,9 +165,8 @@ function refundWindowKeys(query: string): PolicyChunkKey[] {
   const lower = query.toLowerCase();
   const annual = chunk("refunds", "refunds-annual-plans");
   const monthly = chunk("refunds", "refunds-monthly-plans");
-  if (/\bfor annual\b/.test(lower) || /\bok for annual\b/.test(lower)) return [annual];
-  if (/\bfor monthly\b/.test(lower) || /\bmonthly accounts?\b/.test(lower)) return [monthly];
-  if (/\bannual\b/.test(lower) && !/\bmonthly\b/.test(lower)) return [annual, monthly];
+  if (/\bannual\b/.test(lower) && !/\bmonthly\b/.test(lower)) return [annual];
+  if (/\bmonthly\b/.test(lower) && !/\bannual\b/.test(lower)) return [monthly];
   return [monthly, annual];
 }
 

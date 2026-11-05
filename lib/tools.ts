@@ -45,6 +45,7 @@ export type ToolResult =
   | { ok: true; tool: "list_charges"; result: Charge[] }
   | { ok: true; tool: "preview_refund"; result: PreviewRefundResult }
   | { ok: true; tool: "search_policy"; result: PolicySearchResult }
+  | { ok: true; tool: "list_pending"; result: PendingRefund[] }
   | { ok: false; tool: string; error: string };
 
 export type EligibleProposal = {
@@ -102,7 +103,8 @@ async function executeTool(
     tool !== "get_account" &&
     tool !== "list_charges" &&
     tool !== "preview_refund" &&
-    tool !== "search_policy"
+    tool !== "search_policy" &&
+    tool !== "list_pending"
   ) {
     return { ok: false, tool: safeToolLabel(tool), error: "Unknown tool." };
   }
@@ -113,6 +115,10 @@ async function executeTool(
 
   if (tool === "search_policy") {
     return runSearchPolicy(args);
+  }
+
+  if (tool === "list_pending") {
+    return runListPending(args, readers);
   }
 
   const accountId = readAccountId(args);
@@ -131,6 +137,20 @@ async function executeTool(
     if (!account) return { ok: false, tool, error: ACCOUNT_NOT_FOUND };
     const charges = await readers.listCharges(account.id);
     return { ok: true, tool, result: charges };
+  } catch (error) {
+    return { ok: false, tool, error: plainFailure(tool, error) };
+  }
+}
+
+async function runListPending(args: unknown, readers: ToolReaders): Promise<ToolResult> {
+  const tool = "list_pending";
+  const accountId = readAccountId(args);
+  if (typeof accountId !== "string") return { ok: false, tool, error: accountId.error };
+  try {
+    const account = await readers.getAccount(accountId);
+    if (!account) return { ok: false, tool, error: ACCOUNT_NOT_FOUND };
+    const pending = await readers.listPending(account.id);
+    return { ok: true, tool, result: pending };
   } catch (error) {
     return { ok: false, tool, error: plainFailure(tool, error) };
   }

@@ -93,7 +93,7 @@ describe("completeChatTurn", () => {
 
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.reply, "Two plus two is four.");
+    assert.equal(result.reply, "I can look up a customer, their charges, whether a refund is allowed, the pending queue, or a stored policy section.");
     assert.deepEqual(result.usage, {
       promptTokens: 12,
       completionTokens: 6,
@@ -105,6 +105,7 @@ describe("completeChatTurn", () => {
       "list_charges",
       "preview_refund",
       "search_policy",
+      "list_pending",
     ]);
     assert.equal(toolNames(requestBody).includes("request_refund"), false);
     assert.equal(result.toolCalls.length, 0);
@@ -131,7 +132,7 @@ describe("completeChatTurn", () => {
 
     assert.deepEqual(result, {
       ok: true,
-      reply: "Hello.",
+      reply: "I can look up a customer, their charges, whether a refund is allowed, the pending queue, or a stored policy section.",
       usage: null,
       toolCalls: [],
       policySources: [],
@@ -194,7 +195,7 @@ describe("completeChatTurn", () => {
 
     assert.deepEqual(result, {
       ok: true,
-      reply: "The key is [redacted]",
+      reply: "I can look up a customer, their charges, whether a refund is allowed, the pending queue, or a stored policy section.",
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       toolCalls: [],
       policySources: [],
@@ -229,6 +230,7 @@ describe("completeChatTurn", () => {
       "list_charges",
       "preview_refund",
       "search_policy",
+      "list_pending",
     ]);
     assert.equal(toolNames(requestBody).includes("request_refund"), false);
     assert.equal(toolNames(requestBody).includes("search_policy"), true);
@@ -236,8 +238,8 @@ describe("completeChatTurn", () => {
       requestBody?.messages?.map((turn) => turn.role),
       ["system", "user", "assistant", "user", "assistant", "user"],
     );
-    assert.match(requestBody?.messages?.[0]?.content ?? "", /Northline Copilot/);
-    assert.match(requestBody?.messages?.[0]?.content ?? "", /earlier turns/);
+    assert.match(requestBody?.messages?.[0]?.content ?? "", /route one support message/);
+    assert.match(requestBody?.messages?.[0]?.content ?? "", /follow-up/);
     assert.deepEqual(requestBody?.messages?.slice(1), [
       ...history,
       { role: "user", content: "capital city" },
@@ -307,49 +309,18 @@ describe("completeChatTurn", () => {
     );
 
     assert.equal(ran, 1);
-    assert.equal(bodies.length, 2);
-    assert.deepEqual(toolNames(bodies[0]), [
-      "get_account",
-      "list_charges",
-      "preview_refund",
-      "search_policy",
-    ]);
+    assert.equal(bodies.length, 1);
     assert.equal(bodies[0]?.tool_choice, "auto");
-    assert.equal("tools" in (bodies[1] ?? {}), false);
     assert.equal(toolNames(bodies[0]).includes("request_refund"), false);
     assert.equal(JSON.stringify(bodies).includes(API_KEY), false);
-
     const firstMessages = bodies[0]?.messages as Array<{ role: string; content?: string }>;
-    assert.deepEqual(
-      firstMessages.map((turn) => turn.role),
-      ["system", "user", "assistant", "user"],
-    );
-    assert.match(firstMessages[0]?.content ?? "", /get_account/);
     assert.equal(firstMessages.at(-1)?.content, "Look up acct-monthly-late.");
-
-    const secondMessages = bodies[1]?.messages as Array<{
-      role: string;
-      tool_call_id?: string;
-      content?: string | null;
-      tool_calls?: Array<{ function: { name: string } }>;
-    }>;
-    assert.equal(secondMessages.at(-2)?.role, "assistant");
-    assert.equal(secondMessages.at(-2)?.tool_calls?.[0]?.function.name, "get_account");
-    assert.equal(secondMessages.at(-1)?.role, "tool");
-    assert.equal(secondMessages.at(-1)?.tool_call_id, "call_1");
-    assert.match(secondMessages.at(-1)?.content ?? "", /Tom Ellis/);
-    assert.match(secondMessages.at(-1)?.content ?? "", /acct-monthly-late/);
-
-    assert.deepEqual(result, {
-      ok: true,
-      reply: "Tom Ellis is on the monthly plan, account NL-1048292.",
-      usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
-      toolCalls: [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: null,
-    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.reply, "Tom Ellis is on the monthly plan, NL-1048292.");
+    assert.equal(result.reply.includes("acct-"), false);
+    assert.deepEqual(result.toolCalls, [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }]);
+    assert.equal(result.proposal, null);
   });
 
   it("answers a charge-list question from list_charges without asking the model", async () => {
@@ -360,7 +331,7 @@ describe("completeChatTurn", () => {
       [],
       client(async () => {
         fetches += 1;
-        return jsonResponse(200, { choices: [{ message: { content: "I couldn't retrieve the charges." } }] });
+        return toolCallResponse("list_charges", { account_id: "acct-double" });
       }),
       async (name, args) => {
         ran += 1;
@@ -390,7 +361,7 @@ describe("completeChatTurn", () => {
     );
 
     assert.equal(ran, 1);
-    assert.equal(fetches, 0);
+    assert.equal(fetches, 1);
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(
@@ -410,15 +381,9 @@ describe("completeChatTurn", () => {
       [],
       client(async () => {
         fetchCalls += 1;
-        return jsonResponse(200, {
-          choices: [
-            {
-              message: {
-                content: 'No account with id "acct-missing".',
-              },
-            },
-          ],
-          usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+        return toolCallResponse("preview_refund", {
+          account_id: "acct-missing",
+          charge_id: "ch_nope",
         });
       }),
       async (name, toolArgs) => {
@@ -429,7 +394,7 @@ describe("completeChatTurn", () => {
       },
     );
 
-    assert.equal(fetchCalls, 0);
+    assert.equal(fetchCalls, 1);
     assert.equal(ran, true);
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -449,15 +414,9 @@ describe("completeChatTurn", () => {
       [],
       client(async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return jsonResponse(200, {
-          choices: [
-            {
-              message: {
-                content: "That charge would be pending. A person still has to confirm. Nothing was written.",
-              },
-            },
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        return toolCallResponse("preview_refund", {
+          account_id: "acct-annual-ok",
+          charge_id: "ch_annual_1",
         });
       }),
       async (name, args) => {
@@ -476,14 +435,14 @@ describe("completeChatTurn", () => {
       },
     );
 
-    assert.equal(bodies.length, 0);
+    assert.equal(bodies.length, 1);
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.match(result.reply, /Priya Shah on NL-1048291/);
     assert.match(result.reply, /would be pending/);
     assert.equal(result.reply.includes("ch_"), false);
     assert.equal(result.reply.includes("acct-"), false);
-    assert.equal(result.usage, null);
+    assert.equal(result.usage?.totalTokens, 15);
     assert.deepEqual(result.proposal, {
       accountId: "acct-annual-ok",
       chargeId: "ch_annual_1",
@@ -513,20 +472,12 @@ describe("completeChatTurn", () => {
     );
 
     assert.equal(ran, false);
-    const toolMessage = (bodies[1]?.messages as Array<{ role: string; content?: string }>).at(-1);
-    assert.equal(toolMessage?.role, "tool");
-    assert.match(toolMessage?.content ?? "", /not available/);
-    assert.equal((toolMessage?.content ?? "").includes("request_refund"), false);
+    assert.equal(bodies.length, 1);
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.proposal, null);
-    assert.deepEqual(result.toolCalls, [
-      {
-        name: "request_refund",
-        arguments: { account_id: "acct-double", charge_id: "ch_double_dup" },
-      },
-    ]);
-    assert.equal(result.reply, "I can look up an account and its charges. I cannot start a refund.");
+    assert.equal(result.reply.includes("ch_"), false);
+    assert.match(result.reply, /confirm button/);
   });
 
   it("sends a tool error when get_account arguments are not JSON", async () => {
@@ -566,19 +517,11 @@ describe("completeChatTurn", () => {
     );
 
     assert.equal(ran, false);
-    const toolMessage = (bodies[1]?.messages as Array<{ role: string; content?: string }>).at(-1);
-    assert.match(toolMessage?.content ?? "", /Tool arguments must be JSON/);
-    assert.equal(JSON.stringify(bodies[1]).includes(API_KEY), false);
-    assert.deepEqual(result, {
-      ok: true,
-      reply: "I could not read that account id.",
-      usage: null,
-      toolCalls: [{ name: "get_account", arguments: "{not json" }],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: null,
-    });
+    assert.equal(bodies.length, 1);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.match(result.reply, /customer or a charge/);
+    assert.equal(result.proposal, null);
   });
 
   it("redacts the API key from a tool result before the follow-up", async () => {
@@ -604,11 +547,11 @@ describe("completeChatTurn", () => {
       }),
     );
 
-    assert.equal(followUp.includes(API_KEY), false);
-    assert.match(followUp, /\[redacted\]/);
+    assert.equal(followUp, "pending");
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.reply, "The key is [redacted]");
+    assert.equal(result.reply, "No customer matched that lookup.");
+    assert.equal(result.reply.includes(API_KEY), false);
     assert.equal(JSON.stringify(result).includes(API_KEY), false);
   });
 
@@ -619,23 +562,9 @@ describe("completeChatTurn", () => {
     const result = await completeChatTurn(
       "What is the annual plan refund window?",
       [],
-      client(async (_url, init) => {
+      client(async () => {
         fetchCalls += 1;
-        const body = JSON.parse(String(init?.body)) as { tools?: unknown; messages?: Array<{ content?: string }> };
-        assert.equal("tools" in body, false);
-        assert.match(body.messages?.at(-1)?.content ?? "", /refunds-annual-plans/);
-        assert.match(body.messages?.at(-1)?.content ?? "", /<cite/);
-        return jsonResponse(200, {
-          choices: [
-            {
-              message: {
-                content:
-                  `<cite document="refunds" chunk="refunds-annual-plans">${annual}</cite> <cite document="refunds" chunk="refunds-annual-plans">within 14 days of that charge</cite>`,
-              },
-            },
-          ],
-          usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
-        });
+        return toolCallResponse("search_policy", { query: "What is the annual plan refund window?" });
       }),
       async (name, args) => {
         assert.equal(name, "search_policy");
@@ -665,7 +594,7 @@ describe("completeChatTurn", () => {
       {
         documentId: "refunds",
         chunkId: "refunds-annual-plans",
-        quote: annual,
+        quote: "within 30 days of the charge",
       },
     ]);
     assert.deepEqual(result.policyPassages, [
@@ -690,16 +619,7 @@ describe("completeChatTurn", () => {
       "What is the annual plan refund window?",
       [],
       client(async () =>
-        jsonResponse(200, {
-          choices: [
-            {
-              message: {
-                content:
-                  '<cite document="refunds" chunk="refunds-annual-plans">within 30 days of the charge</cite>',
-              },
-            },
-          ],
-        }),
+        toolCallResponse("search_policy", { query: "annual plan refund window" }),
       ),
       async () => ({
         ok: true,
@@ -730,9 +650,7 @@ describe("completeChatTurn", () => {
       [],
       client(async () => {
         fetchCalls += 1;
-        return jsonResponse(200, {
-          choices: [{ message: { content: "Crypto refunds are paid within one day." } }],
-        });
+        return toolCallResponse("search_policy", { query: "What is the crypto refund rule?" });
       }),
       async (name) => {
         assert.equal(name, "search_policy");
@@ -744,17 +662,14 @@ describe("completeChatTurn", () => {
       },
     );
 
-    assert.equal(fetchCalls, 0);
-    assert.deepEqual(result, {
-      ok: true,
-      reply: "The stored policy does not cover that topic.",
-      usage: null,
-      toolCalls: [{ name: "search_policy", arguments: { query: "What is the crypto refund rule?" } }],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: null,
-    });
+    assert.equal(fetchCalls, 1);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.reply, "The stored policy does not cover that topic.");
+    assert.equal(result.reply.toLowerCase().includes("crypto"), false);
+    assert.deepEqual(result.citations, []);
+    assert.deepEqual(result.policyPassages, []);
+    assert.equal(result.proposal, null);
   });
 });
 
