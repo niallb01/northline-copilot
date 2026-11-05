@@ -127,10 +127,82 @@ export async function embedPolicyChunks(): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Refund policy, eligibility, timeline, or "how many days" questions should
+ * return the monthly and annual windows. Nearest-neighbour search ranks the
+ * payout paragraph ("10 business days") above those windows.
+ */
+export function prefersRefundWindows(query: string): boolean {
+  const lower = query.toLowerCase();
+  const aboutRefund = /\brefunds?\b/.test(lower);
+  const aboutWindow =
+    (/\b(annual|monthly)\b/.test(lower) && /\b(refund|window)\b/.test(lower)) ||
+    (aboutRefund &&
+      (/\bpolic(?:y|ies)\b/.test(lower) ||
+        /\beligib/.test(lower) ||
+        /\bwindow\b/.test(lower) ||
+        /\bhow long\b/.test(lower) ||
+        /\btimeline\b/.test(lower) ||
+        /\bdays?\b/.test(lower)));
+  if (!aboutWindow) return false;
+  const aboutPayout =
+    /\bbusiness days\b/.test(lower) ||
+    /\bpayment method\b/.test(lower) ||
+    /\bexception\b/.test(lower) ||
+    /\boriginal payment\b/.test(lower) ||
+    /\bmoney is returned\b/.test(lower);
+  const aboutEligibility = /\beligib|\bwindow\b|\bmonthly\b|\bannual\b|\bdays?\b/.test(lower);
+  return !aboutPayout || aboutEligibility;
+}
+
+function refundWindowKeys(query: string): Array<{ documentId: string; chunkId: string }> {
+  const lower = query.toLowerCase();
+  const annual = { documentId: "refunds", chunkId: "refunds-annual-plans" };
+  const monthly = { documentId: "refunds", chunkId: "refunds-monthly-plans" };
+  if (/\bannual\b/.test(lower) && !/\bmonthly\b/.test(lower)) return [annual, monthly];
+  return [monthly, annual];
+}
+
+async function loadPolicyPassages(
+  keys: readonly { documentId: string; chunkId: string }[],
+): Promise<PolicyPassage[]> {
+  if (keys.length === 0) return [];
+  return withClient(async (client) => {
+    const result = await client.query<PassageRow>(
+      `select document_id, chunk_id, source_title, passage
+       from public.policy_chunks
+       where (document_id, chunk_id) in (
+         select * from unnest($1::text[], $2::text[])
+       )`,
+      [keys.map((key) => key.documentId), keys.map((key) => key.chunkId)],
+    );
+    const byKey = new Map(
+      result.rows.map((row) => [`${row.document_id}\0${row.chunk_id}`, row] as const),
+    );
+    return keys.flatMap((key) => {
+      const row = byKey.get(`${key.documentId}\0${key.chunkId}`);
+      if (!row) return [];
+      return [
+        {
+          documentId: row.document_id,
+          chunkId: row.chunk_id,
+          sourceTitle: row.source_title,
+          passage: row.passage,
+        },
+      ];
+    });
+  });
+}
+
 export async function searchPolicy(query: string, limit = DEFAULT_MATCH_COUNT): Promise<PolicySearchResult> {
   const question = query.trim();
   if (!question) {
     throw new Error("Enter a policy question.");
+  }
+
+  if (prefersRefundWindows(question)) {
+    const windows = await loadPolicyPassages(refundWindowKeys(question));
+    if (windows.length > 0) return { passages: windows, message: null };
   }
 
   const matchCount = readMatchCount(limit);

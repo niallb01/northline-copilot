@@ -307,14 +307,9 @@ function chargeIdFromOperatorMessage(text: string, account: Account): string | n
   return null;
 }
 
-/** When the operator asks about stored policy and is not previewing a charge, search before the reply. */
-export function policySearchIntent(message: string): { query: string } | null {
-  if (previewRefundIntent(message)) return null;
-  const text = message.trim();
-  if (!text) return null;
-
+function asksAboutStoredRules(text: string): boolean {
   const lower = text.toLowerCase();
-  const asksAboutStoredRules =
+  return (
     /\bpolic(?:y|ies)\b/.test(lower) ||
     /\brefund window\b/.test(lower) ||
     /\brefund rule\b/.test(lower) ||
@@ -324,10 +319,41 @@ export function policySearchIntent(message: string): { query: string } | null {
     /\buptime\b/.test(lower) ||
     /\bgrace period\b/.test(lower) ||
     (/\brefunds?\b/.test(lower) &&
-      /\b(what|how|does|rule|policy|window|cover)\b/.test(lower));
-  if (!asksAboutStoredRules) return null;
+      /\b(what|how|does|rule|policy|window|cover|eligib|timeline|days?)\b/.test(lower))
+  );
+}
 
-  return { query: text.slice(0, 500) };
+function clarifiesPolicy(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (text.length > 160) return false;
+  return (
+    /^(no|not|i mean|in terms|instead|what about)\b/.test(lower) ||
+    /\bdays?\b/.test(lower) ||
+    /\beligib/.test(lower) ||
+    /\bwindow\b/.test(lower) ||
+    /\bhow long\b/.test(lower)
+  );
+}
+
+/** When the operator asks about stored policy and is not previewing a charge, search before the reply. A short correction uses the earlier policy question plus this message. */
+export function policySearchIntent(
+  message: string,
+  history: readonly ChatTurn[] = [],
+): { query: string } | null {
+  if (previewRefundIntent(message)) return null;
+  const text = message.trim();
+  if (!text) return null;
+  if (asksAboutStoredRules(text)) return { query: text.slice(0, 500) };
+
+  if (!clarifiesPolicy(text)) return null;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const turn = history[index];
+    if (turn?.role !== "user") continue;
+    const earlier = turn.content.trim();
+    if (!earlier || previewRefundIntent(earlier) || !asksAboutStoredRules(earlier)) continue;
+    return { query: `${earlier} ${text}`.slice(0, 500) };
+  }
+  return null;
 }
 
 /** When the operator asks for the charges on a known account, list them before the model can invent a miss. */
@@ -356,7 +382,7 @@ export async function completeChatTurn(
     return completePreviewRefundTurn(message, history, forcedPreview, client, apiKey, runTool);
   }
 
-  const forcedPolicy = policySearchIntent(message);
+  const forcedPolicy = policySearchIntent(message, history);
   if (forcedPolicy) {
     return completePolicySearchTurn(message, history, forcedPolicy, client, apiKey, runTool);
   }
@@ -865,22 +891,14 @@ function checkedPolicyReply(
 
 function operatorPolicyReply(
   settledReply: string,
-  citations: readonly PolicyCitation[],
+  _citations: readonly PolicyCitation[],
   passages: readonly PolicyPassage[],
 ): string {
   const chosen: PolicyPassage[] = [];
   const seen = new Set<string>();
-  const keys =
-    citations.length > 0
-      ? citations.map((citation) => ({ documentId: citation.documentId, chunkId: citation.chunkId }))
-      : passages.slice(0, 1);
-  for (const item of keys) {
-    const key = `${item.documentId}\0${item.chunkId}`;
+  for (const passage of passages) {
+    const key = `${passage.documentId}\0${passage.chunkId}`;
     if (seen.has(key)) continue;
-    const passage = passages.find(
-      (row) => row.documentId === item.documentId && row.chunkId === item.chunkId,
-    );
-    if (!passage) continue;
     seen.add(key);
     chosen.push(passage);
   }

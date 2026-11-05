@@ -792,6 +792,19 @@ describe("policySearchIntent", () => {
     assert.equal(policySearchIntent("Look up acct-monthly-late."), null);
     assert.equal(policySearchIntent("Refund the duplicate charge."), null);
   });
+
+  it("treats a short correction as the same policy question", () => {
+    assert.deepEqual(
+      policySearchIntent("no in terms of days", [
+        { role: "user", content: "what are refund rules for eligibility" },
+        { role: "assistant", content: "Approved refunds go back to the original payment method." },
+      ]),
+      {
+        query: "what are refund rules for eligibility no in terms of days",
+      },
+    );
+    assert.equal(policySearchIntent("no in terms of days"), null);
+  });
 });
 
 describe("listChargesIntent", () => {
