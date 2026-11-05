@@ -791,6 +791,8 @@ describe("policySearchIntent", () => {
     );
     assert.equal(policySearchIntent("Look up acct-monthly-late."), null);
     assert.equal(policySearchIntent("Refund the duplicate charge."), null);
+    assert.ok(policySearchIntent("the site is down, who do I pass this to?"));
+    assert.ok(policySearchIntent("what does the cheapest plan include?"));
   });
 
   it("treats a short correction as the same policy question", () => {

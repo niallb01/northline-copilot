@@ -17,7 +17,7 @@
  * insert a pending row, or offer request_refund as a tool.
  */
 
-import { collectPolicySourcePaths, formatPolicySourcePath, type PolicyPassage } from "./policy";
+import { collectPolicySourcePaths, formatPolicySourcePath, policyRouteKeys, type PolicyPassage } from "./policy";
 import {
   POLICY_REFUSAL,
   plainPolicyText,
@@ -323,6 +323,12 @@ function asksAboutStoredRules(text: string): boolean {
   );
 }
 
+function isStoredPolicyQuestion(text: string): boolean {
+  if (asksAboutStoredRules(text)) return true;
+  if (/^refund\b/i.test(text) && !text.includes("?")) return false;
+  return policyRouteKeys(text) !== null;
+}
+
 function clarifiesPolicy(text: string): boolean {
   const lower = text.toLowerCase();
   if (text.length > 160) return false;
@@ -331,7 +337,8 @@ function clarifiesPolicy(text: string): boolean {
     /\bdays?\b/.test(lower) ||
     /\beligib/.test(lower) ||
     /\bwindow\b/.test(lower) ||
-    /\bhow long\b/.test(lower)
+    /\bhow long\b/.test(lower) ||
+    /\btell\b/.test(lower)
   );
 }
 
@@ -343,14 +350,14 @@ export function policySearchIntent(
   if (previewRefundIntent(message)) return null;
   const text = message.trim();
   if (!text) return null;
-  if (asksAboutStoredRules(text)) return { query: text.slice(0, 500) };
+  if (isStoredPolicyQuestion(text)) return { query: text.slice(0, 500) };
 
   if (!clarifiesPolicy(text)) return null;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const turn = history[index];
     if (turn?.role !== "user") continue;
     const earlier = turn.content.trim();
-    if (!earlier || previewRefundIntent(earlier) || !asksAboutStoredRules(earlier)) continue;
+    if (!earlier || previewRefundIntent(earlier) || !isStoredPolicyQuestion(earlier)) continue;
     return { query: `${earlier} ${text}`.slice(0, 500) };
   }
   return null;

@@ -155,12 +155,131 @@ export function prefersRefundWindows(query: string): boolean {
   return !aboutPayout || aboutEligibility;
 }
 
-function refundWindowKeys(query: string): Array<{ documentId: string; chunkId: string }> {
+function refundWindowKeys(query: string): PolicyChunkKey[] {
   const lower = query.toLowerCase();
-  const annual = { documentId: "refunds", chunkId: "refunds-annual-plans" };
-  const monthly = { documentId: "refunds", chunkId: "refunds-monthly-plans" };
+  const annual = chunk("refunds", "refunds-annual-plans");
+  const monthly = chunk("refunds", "refunds-monthly-plans");
   if (/\bannual\b/.test(lower) && !/\bmonthly\b/.test(lower)) return [annual, monthly];
   return [monthly, annual];
+}
+
+export type PolicyChunkKey = { documentId: string; chunkId: string };
+
+function chunk(documentId: string, chunkId: string): PolicyChunkKey {
+  return { documentId, chunkId };
+}
+
+/**
+ * Everyday wording for the 18 stored sections. Vector search misses these
+ * paraphrases or returns a neighbouring section. Null means use similarity.
+ */
+export function policyRouteKeys(query: string): PolicyChunkKey[] | null {
+  const lower = query.toLowerCase();
+
+  if (
+    /\bservice credit\b/.test(lower) ||
+    /\bmoney off\b/.test(lower) ||
+    /\bcompensat/.test(lower) ||
+    (/\b(down|outage|downtime)\b/.test(lower) && /\b(credit|money|refund|fee|compensat)\b/.test(lower)) ||
+    (/\bmissed\b/.test(lower) && /\b(target|uptime)\b/.test(lower))
+  ) {
+    return [chunk("plans-and-sla", "plans-and-sla-service-credits")];
+  }
+
+  if (prefersRefundWindows(query)) return refundWindowKeys(query);
+
+  if (
+    /\bbusiness days\b/.test(lower) ||
+    /\bpayment method\b/.test(lower) ||
+    /\bexception\b/.test(lower) ||
+    /\boriginal payment\b/.test(lower) ||
+    /\bmoney is returned\b/.test(lower) ||
+    (/\brefund/.test(lower) && /\b(bank|account|arrive|lands)\b/.test(lower))
+  ) {
+    return [chunk("refunds", "refunds-how-the-money-is-returned")];
+  }
+
+  if (
+    /\b403\b/.test(lower) ||
+    /\bclock skew\b/.test(lower) ||
+    /after (the |a )?(release|deploy)/.test(lower) ||
+    (/\b(error|errors|login|log in|sign in)\b/.test(lower) && /\b(release|deploy|shipped)\b/.test(lower))
+  ) {
+    if (/\btell\b/.test(lower)) {
+      return [
+        chunk("auth-403-runbook", "auth-403-runbook-what-to-tell-the-customer"),
+        chunk("auth-403-runbook", "auth-403-runbook-first-check"),
+      ];
+    }
+    return [
+      chunk("auth-403-runbook", "auth-403-runbook-first-check"),
+      chunk("auth-403-runbook", "auth-403-runbook-second-check"),
+    ];
+  }
+
+  if (/\bstarter\b/.test(lower) || /\bcheapest\b/.test(lower) || /\bcheap plan\b/.test(lower) || /\bbasic plan\b/.test(lower)) {
+    return [chunk("plans-and-sla", "plans-and-sla-starter")];
+  }
+  if (/\bgrowth\b/.test(lower) || /\bmid-tier\b/.test(lower) || /\bmid tier\b/.test(lower) || /\bmiddle plan\b/.test(lower)) {
+    return [chunk("plans-and-sla", "plans-and-sla-growth")];
+  }
+  if (
+    /\bscale\b/.test(lower) ||
+    /\btop plan\b/.test(lower) ||
+    /\bhighest plan\b/.test(lower) ||
+    /\bexpensive plan\b/.test(lower) ||
+    /\b99\.95\b/.test(lower)
+  ) {
+    return [chunk("plans-and-sla", "plans-and-sla-scale")];
+  }
+  if (/\b(uptime|reliable|reliability)\b/.test(lower)) {
+    return [
+      chunk("plans-and-sla", "plans-and-sla-scale"),
+      chunk("plans-and-sla", "plans-and-sla-service-credits"),
+    ];
+  }
+
+  if (
+    /\b(grace period|non-payment|read-only)\b/.test(lower) ||
+    /\bsuspend/.test(lower) ||
+    (/\b(card|payment|payments)\b/.test(lower) && /\b(fail|fails|failed|declin)/.test(lower))
+  ) {
+    return [chunk("billing", "billing-failed-payments")];
+  }
+  if (
+    /\b(double charge|charged twice|duplicate charge|two successful charges|same invoice)\b/.test(lower) ||
+    (/\bcharged\b/.test(lower) && /\btwice\b/.test(lower))
+  ) {
+    return [chunk("billing", "billing-double-charges")];
+  }
+  if (/\binvoices?\b/.test(lower)) return [chunk("billing", "billing-invoices")];
+
+  if (
+    (/\bbilling\b/.test(lower) && /\bengineering\b/.test(lower)) ||
+    /\bhow-to\b/.test(lower) ||
+    /\bhow to questions?\b/.test(lower) ||
+    /\bdo not escalate\b/.test(lower) ||
+    /\bdon't escalate\b/.test(lower)
+  ) {
+    return [
+      chunk("escalation", "escalation-stay-on-the-front-line"),
+      chunk("escalation", "escalation-engineering"),
+    ];
+  }
+  if (
+    /\bengineering\b/.test(lower) ||
+    /\boutage\b/.test(lower) ||
+    /\bsite is down\b/.test(lower) ||
+    /\bwho do i (pass|escalate|send)\b/.test(lower) ||
+    /\bdata loss\b/.test(lower)
+  ) {
+    return [
+      chunk("escalation", "escalation-engineering"),
+      chunk("escalation", "escalation-what-the-ticket-needs"),
+    ];
+  }
+
+  return null;
 }
 
 async function loadPolicyPassages(
@@ -200,9 +319,10 @@ export async function searchPolicy(query: string, limit = DEFAULT_MATCH_COUNT): 
     throw new Error("Enter a policy question.");
   }
 
-  if (prefersRefundWindows(question)) {
-    const windows = await loadPolicyPassages(refundWindowKeys(question));
-    if (windows.length > 0) return { passages: windows, message: null };
+  const routed = policyRouteKeys(question);
+  if (routed) {
+    const passages = await loadPolicyPassages(routed);
+    if (passages.length > 0) return { passages, message: null };
   }
 
   const matchCount = readMatchCount(limit);
