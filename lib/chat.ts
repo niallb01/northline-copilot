@@ -789,7 +789,7 @@ async function completePendingQueueTurn(args: { account_id: string }): Promise<C
 function describePreview(
   accountId: string,
   chargeId: string,
-  ran: { content: string; proposal: EligibleProposal | null },
+  ran: { content: string },
 ): string {
   const account = seedAccounts.find((row) => row.id === accountId);
   const charge = account?.charges.find((row) => row.chargeId === chargeId);
