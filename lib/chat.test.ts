@@ -17,6 +17,7 @@ import {
   MAX_HISTORY_TURNS,
   MAX_MESSAGE_LENGTH,
   listChargesIntent,
+  pendingQueueIntent,
   policySearchIntent,
   previewRefundIntent,
   readChatRequest,
@@ -774,6 +775,7 @@ describe("policySearchIntent", () => {
     );
     assert.equal(policySearchIntent("Look up acct-monthly-late."), null);
     assert.equal(policySearchIntent("Refund the duplicate charge."), null);
+    assert.equal(policySearchIntent("does tom ellis have any refunds pending"), null);
     assert.ok(policySearchIntent("the site is down, who do I pass this to?"));
     assert.ok(policySearchIntent("what does the cheapest plan include?"));
   });
@@ -799,6 +801,16 @@ describe("policySearchIntent", () => {
       },
     );
     assert.equal(policySearchIntent("no in terms of days"), null);
+  });
+});
+
+describe("pendingQueueIntent", () => {
+  it("reads the queue for a named customer and leaves the annual window as policy", () => {
+    assert.deepEqual(pendingQueueIntent("does tom ellis have any refunds pending"), {
+      account_id: "acct-monthly-late",
+    });
+    assert.equal(policySearchIntent("does tom ellis have any refunds pending"), null);
+    assert.equal(pendingQueueIntent("what is refund window for annual accounts"), null);
   });
 });
 

@@ -26,6 +26,7 @@ import {
   type PolicyPassageView,
 } from "./policyCitations";
 import { resolveAccountId } from "./accounts";
+import { listPendingForAccount } from "./refunds";
 import { seedAccounts } from "./seed";
 import type { Account, Charge } from "./types";
 import { dispatchTool, eligibleProposal, type EligibleProposal, type ToolResult } from "./tools";
@@ -335,6 +336,21 @@ export function previewRefundIntent(
   return { account_id: accountId, charge_id: chargeId };
 }
 
+/** When the operator asks whether a known customer already has a refund waiting, read the queue instead of searching policy. */
+export function pendingQueueIntent(
+  message: string,
+  history: readonly ChatTurn[] = [],
+): { account_id: string } | null {
+  const text = message.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  const asksQueue = /\bpending\b/.test(lower) || /\bwaiting for review\b/.test(lower) || /\bin the queue\b/.test(lower);
+  if (!asksQueue || !/\brefund/.test(lower)) return null;
+  const accountId = accountIdFromThread(text, history);
+  if (!accountId) return null;
+  return { account_id: accountId };
+}
+
 function accountIdFromOperatorMessage(text: string): string | null {
   const acct = text.match(/\bacct-[a-z0-9-]+\b/i)?.[0];
   if (acct) {
@@ -440,7 +456,7 @@ export function policySearchIntent(
   message: string,
   history: readonly ChatTurn[] = [],
 ): { query: string } | null {
-  if (previewRefundIntent(message, history)) return null;
+  if (previewRefundIntent(message, history) || pendingQueueIntent(message, history)) return null;
   const text = message.trim();
   if (!text) return null;
   if (isCustomerSpecificPolicyTurn(text, history)) return null;
@@ -464,7 +480,13 @@ export function listChargesIntent(
   message: string,
   history: readonly ChatTurn[] = [],
 ): { account_id: string } | null {
-  if (previewRefundIntent(message, history) || policySearchIntent(message, history)) return null;
+  if (
+    previewRefundIntent(message, history) ||
+    pendingQueueIntent(message, history) ||
+    policySearchIntent(message, history)
+  ) {
+    return null;
+  }
   const text = message.trim();
   if (!text || !/\bcharges\b/i.test(text)) return null;
   const accountId = accountIdFromOperatorMessage(text);
@@ -497,6 +519,11 @@ async function runCompleteChatTurn(
   const forcedPreview = previewRefundIntent(message, history);
   if (forcedPreview) {
     return completePreviewRefundTurn(message, history, forcedPreview, client, apiKey, runTool);
+  }
+
+  const forcedQueue = pendingQueueIntent(message, history);
+  if (forcedQueue) {
+    return completePendingQueueTurn(forcedQueue);
   }
 
   const forcedPolicy = policySearchIntent(message, history);
@@ -658,6 +685,35 @@ async function completePreviewRefundTurn(
     toolCalls,
     ...emptyPolicyFields(),
     proposal: ran.proposal,
+  };
+}
+
+async function completePendingQueueTurn(args: { account_id: string }): Promise<ChatTurnResult> {
+  const account = seedAccounts.find((row) => row.id === args.account_id);
+  const who = account ? `${account.customerName} on ${account.accountNumber}` : "That customer";
+  let reply = `Could not check the pending queue for ${who}.`;
+  try {
+    const rows = await listPendingForAccount(args.account_id);
+    reply =
+      rows.length === 0
+        ? `${who} has no refund waiting for review.`
+        : rows
+            .map(
+              (row) =>
+                `${who} has a refund of ${formatGbp(row.amount)} from ${formatChargeDate(row.chargeDate)} waiting for review.`,
+            )
+            .join(" ");
+  } catch {
+    reply = `Could not check the pending queue for ${who}.`;
+  }
+
+  return {
+    ok: true,
+    reply,
+    usage: null,
+    toolCalls: [],
+    ...emptyPolicyFields(),
+    proposal: null,
   };
 }
 
