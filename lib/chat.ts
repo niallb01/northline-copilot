@@ -341,6 +341,7 @@ export function previewRefundIntent(
     /\bpreview\b/.test(lower) ||
     /\brefund\b/.test(lower) ||
     /\brefundable\b/.test(lower) ||
+    /\bmoney back\b/.test(lower) ||
     /\b(eligible|eligibility)\b/.test(lower) ||
     (/\ballowed\b/.test(lower) && /\brefund\b/.test(lower));
 
@@ -572,6 +573,8 @@ async function runCompleteChatTurn(
 
   const requested = readToolCalls(first.payload);
   if (requested.length === 0) {
+    const forced = await missedCustomerTurn(message, history, [], client, apiKey, runTool);
+    if (forced) return withUsage(forced, readUsage(first.payload));
     return {
       ok: true,
       reply: OUT_OF_SCOPE,
@@ -610,6 +613,16 @@ async function runCompleteChatTurn(
     if (ran.policyPassages.length > 0) policyPassages.push(...ran.policyPassages);
     sentences.push(sentenceForTool(name, parsed.value, ran));
   }
+
+  const forced = await missedCustomerTurn(
+    message,
+    history,
+    toolCalls.map((call) => call.name),
+    client,
+    apiKey,
+    runTool,
+  );
+  if (forced) return withUsage(forced, readUsage(first.payload));
 
   if (policySearched && policyPassages.length === 0 && toolCalls.every((call) => call.name === "search_policy")) {
     return {
@@ -694,11 +707,49 @@ function describePendingFromTool(accountId: string, content: string): string {
   if (parsed.result.length === 0) return `${who} has no refund waiting for review.`;
   return parsed.result
     .map((row) => {
-      const amount = typeof row.amount === "number" ? formatGbp(row.amount) : "a refund";
+      const chargeId = typeof row.chargeId === "string" ? row.chargeId : "";
+      const seedCharge = account?.charges.find((charge) => charge.chargeId === chargeId);
+      const amount = seedCharge ? formatGbp(seedCharge.amount) : moneyLabel(row.amount);
       const date = typeof row.chargeDate === "string" ? formatChargeDate(row.chargeDate) : "the charge date";
-      return `${who} has a refund of ${amount} from ${date} waiting for review.`;
+      return amount
+        ? `${who} has a refund of ${amount} from ${date} waiting for review.`
+        : `${who} has a refund from ${date} waiting for review.`;
     })
     .join(" ");
+}
+
+function moneyLabel(amount: unknown): string | null {
+  if (typeof amount === "number" && Number.isFinite(amount)) return formatGbp(amount);
+  if (typeof amount === "string" && amount.trim().startsWith("£")) return amount.trim();
+  return null;
+}
+
+/**
+ * The router sometimes answers a named customer's eligibility from policy, or
+ * skips the queue. When the message already names that customer, run the tool
+ * the question asked for.
+ */
+function withUsage(result: ChatTurnResult, usage: TokenUsage | null): ChatTurnResult {
+  if (!result.ok) return result;
+  return { ...result, usage };
+}
+
+async function missedCustomerTurn(
+  message: string,
+  history: readonly ChatTurn[],
+  called: readonly string[],
+  client: ChatCompletionClient,
+  apiKey: string,
+  runTool: ChatToolRunner,
+): Promise<ChatTurnResult | null> {
+  const queue = pendingQueueIntent(message, history);
+  if (queue && !called.includes("list_pending")) return completePendingQueueTurn(queue);
+  if (queue) return null;
+  const preview = previewRefundIntent(message, history);
+  if (preview && !called.includes("preview_refund")) {
+    return completePreviewRefundTurn(message, history, preview, client, apiKey, runTool);
+  }
+  return null;
 }
 
 function readToolJson(content: string): { ok?: boolean; result?: unknown } | null {

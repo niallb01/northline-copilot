@@ -373,6 +373,77 @@ describe("completeChatTurn", () => {
     assert.equal(result.proposal, null);
   });
 
+  it("states a pending refund in pounds", async () => {
+    const result = await completeChatTurn(
+      "does Priya Shah have any refunds pending?",
+      [],
+      client(async () => toolCallResponse("list_pending", { account_id: "acct-annual-ok" })),
+      async () => ({
+        ok: true as const,
+        tool: "list_pending" as const,
+        result: [
+          {
+            accountId: "acct-annual-ok",
+            customerName: "Priya Shah",
+            plan: "annual" as const,
+            chargeId: "ch_annual_1",
+            invoiceId: "in_annual_1",
+            amount: 1788,
+            chargeDate: "2026-10-11",
+            status: "pending" as const,
+            reason: "Already waiting.",
+            startedAt: "2026-10-22T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      result.reply,
+      "Priya Shah on NL-1048291 has a refund of £1,788.00 from 11 Oct 2026 waiting for review.",
+    );
+    assert.equal(result.proposal, null);
+  });
+
+  it("checks the customer's charge when a follow-up asks if he is eligible", async () => {
+    const names: string[] = [];
+    const result = await completeChatTurn(
+      "is he eligible for a refund?",
+      [{ role: "assistant", content: "Tom Ellis is on the monthly plan, NL-1048292." }],
+      client(async () => toolCallResponse("search_policy", { query: "monthly plan refund window" })),
+      async (name) => {
+        names.push(name);
+        if (name === "preview_refund") {
+          return {
+            ok: true,
+            tool: "preview_refund" as const,
+            result: {
+              status: "rejected" as const,
+              reason: "Monthly charge is 55 days old (past 14 days). Refund not started. Nothing was saved.",
+              accountId: "acct-monthly-late",
+              chargeId: "ch_monthly_1",
+            },
+          };
+        }
+        return {
+          ok: true as const,
+          tool: "search_policy" as const,
+          result: { passages: [], message: "The policy does not contain this." },
+        };
+      },
+    );
+
+    assert.equal(names.includes("preview_refund"), true);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.match(result.reply, /Tom Ellis on NL-1048292, £49\.00 on 11 Sept 2026/);
+    assert.match(result.reply, /past 14 days/);
+    assert.equal(result.proposal, null);
+    assert.equal(result.reply.includes("ch_"), false);
+  });
+
   it("forces preview_refund when the user message names both ids", async () => {
     let fetchCalls = 0;
     let ran = false;
@@ -790,6 +861,10 @@ describe("previewRefundIntent", () => {
       charge_id: "ch_monthly_1",
     });
     assert.deepEqual(previewRefundIntent("is he eligible for a refund", tomThread), {
+      account_id: "acct-monthly-late",
+      charge_id: "ch_monthly_1",
+    });
+    assert.deepEqual(previewRefundIntent("NL-1048292 wants his money back, are we allowed?"), {
       account_id: "acct-monthly-late",
       charge_id: "ch_monthly_1",
     });
