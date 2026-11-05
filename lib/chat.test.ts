@@ -341,7 +341,7 @@ describe("completeChatTurn", () => {
 
     assert.deepEqual(result, {
       ok: true,
-      reply: "Tom Ellis is on the monthly plan, account acct-monthly-late.",
+      reply: "Tom Ellis is on the monthly plan, account NL-1048292.",
       usage: { promptTokens: 30, completionTokens: 13, totalTokens: 43 },
       toolCalls: [{ name: "get_account", arguments: { account_id: "acct-monthly-late" } }],
       policySources: [],
@@ -428,20 +428,17 @@ describe("completeChatTurn", () => {
       },
     );
 
-    assert.equal(fetchCalls, 1);
+    assert.equal(fetchCalls, 0);
     assert.equal(ran, true);
-    assert.deepEqual(result, {
-      ok: true,
-      reply: 'No account with id "acct-missing".',
-      usage: { promptTokens: 5, completionTokens: 4, totalTokens: 9 },
-      toolCalls: [
-        { name: "preview_refund", arguments: { account_id: "acct-missing", charge_id: "ch_nope" } },
-      ],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: null,
-    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.reply.includes("ch_"), false);
+    assert.equal(result.reply.includes("acct-"), false);
+    assert.match(result.reply, /Could not check a refund/);
+    assert.equal(result.proposal, null);
+    assert.deepEqual(result.toolCalls, [
+      { name: "preview_refund", arguments: { account_id: "acct-missing", charge_id: "ch_nope" } },
+    ]);
   });
 
   it("runs preview_refund and keeps the proposal out of the tool result", async () => {
@@ -478,32 +475,18 @@ describe("completeChatTurn", () => {
       },
     );
 
-    assert.equal(bodies.length, 1);
-    assert.equal("tools" in (bodies[0] ?? {}), false);
-    const toolMessage = (bodies[0]?.messages as Array<{ role: string; content?: string }>).at(-1);
-    const toolJson = toolMessage?.content ?? "";
-    assert.match(toolJson, /would be pending/);
-    assert.equal(toolJson.includes("request_refund"), false);
-    assert.equal(toolJson.toLowerCase().includes("token"), false);
-    assert.equal(toolJson.toLowerCase().includes("confirmation"), false);
-    assert.deepEqual(result, {
-      ok: true,
-      reply: "That charge would be pending. A person still has to confirm. Nothing was written.",
-      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-      toolCalls: [
-        {
-          name: "preview_refund",
-          arguments: { account_id: "acct-annual-ok", charge_id: "ch_annual_1" },
-        },
-      ],
-      policySources: [],
-      policyPassages: [],
-      citations: [],
-      proposal: {
-        accountId: "acct-annual-ok",
-        chargeId: "ch_annual_1",
-        action: "request_refund",
-      },
+    assert.equal(bodies.length, 0);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.match(result.reply, /Priya Shah on NL-1048291/);
+    assert.match(result.reply, /would be pending/);
+    assert.equal(result.reply.includes("ch_"), false);
+    assert.equal(result.reply.includes("acct-"), false);
+    assert.equal(result.usage, null);
+    assert.deepEqual(result.proposal, {
+      accountId: "acct-annual-ok",
+      chargeId: "ch_annual_1",
+      action: "request_refund",
     });
   });
 

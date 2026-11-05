@@ -478,6 +478,17 @@ export async function completeChatTurn(
   client: ChatCompletionClient = clientFromEnv(),
   runTool: ChatToolRunner = dispatchTool,
 ): Promise<ChatTurnResult> {
+  const result = await runCompleteChatTurn(message, history, client, runTool);
+  if (!result.ok) return result;
+  return { ...result, reply: hideInternalIds(result.reply) };
+}
+
+async function runCompleteChatTurn(
+  message: string,
+  history: readonly ChatTurn[] = [],
+  client: ChatCompletionClient = clientFromEnv(),
+  runTool: ChatToolRunner = dispatchTool,
+): Promise<ChatTurnResult> {
   const apiKey = client.apiKey?.trim();
   if (!apiKey) {
     return { ok: false, error: PUBLIC_ERROR, status: 500, reason: "not_configured" };
@@ -625,9 +636,9 @@ export async function completeChatTurn(
 
 async function completePreviewRefundTurn(
   message: string,
-  history: readonly ChatTurn[],
+  _history: readonly ChatTurn[],
   args: { account_id: string; charge_id: string },
-  client: ChatCompletionClient,
+  _client: ChatCompletionClient,
   apiKey: string,
   runTool: ChatToolRunner,
 ): Promise<ChatTurnResult> {
@@ -635,56 +646,59 @@ async function completePreviewRefundTurn(
     console.log("POST /api/chat preview_refund forced from message:", args);
   }
 
-  const messages: ProviderMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...history.slice(-MAX_HISTORY_TURNS).map((turn) => ({
-      role: turn.role,
-      content: turn.content,
-    })),
-    { role: "user", content: message },
-  ];
-
   const toolCalls: ChatToolCall[] = [
     { name: "preview_refund", arguments: { account_id: args.account_id, charge_id: args.charge_id } },
   ];
-  const callId = "call_preview";
-  const argumentsJson = JSON.stringify(args);
   const ran = await runChatTool(runTool, "preview_refund", args, apiKey);
 
-  const followUp = await requestCompletion(client, apiKey, {
-    messages: [
-      ...messages,
-      {
-        role: "assistant",
-        content: null,
-        tool_calls: [
-          {
-            id: callId,
-            type: "function",
-            function: { name: "preview_refund", arguments: argumentsJson },
-          },
-        ],
-      },
-      { role: "tool", tool_call_id: callId, content: ran.content },
-    ],
-  });
-  if (!followUp.ok) return followUp;
-
-  const reply = redact(readReply(followUp.payload) ?? "", apiKey).trim();
-  if (!reply) {
-    return { ok: false, error: PUBLIC_ERROR, status: 502, reason: "upstream" };
-  }
-
-  const checked = checkedPolicyReply(reply, []);
   return {
     ok: true,
-    reply: checked.reply,
-    usage: readUsage(followUp.payload),
+    reply: describePreview(args.account_id, args.charge_id, ran),
+    usage: null,
     toolCalls,
     ...emptyPolicyFields(),
-    citations: checked.citations,
     proposal: ran.proposal,
   };
+}
+
+function describePreview(
+  accountId: string,
+  chargeId: string,
+  ran: { content: string; proposal: EligibleProposal | null },
+): string {
+  const account = seedAccounts.find((row) => row.id === accountId);
+  const charge = account?.charges.find((row) => row.chargeId === chargeId);
+  const who = account ? `${account.customerName} on ${account.accountNumber}` : "That customer";
+  const line = charge
+    ? `${formatGbp(charge.amount)} on ${formatChargeDate(charge.date)}`
+    : "that charge";
+
+  let payload: { ok?: boolean; error?: string; result?: { status?: string; reason?: string } };
+  try {
+    payload = JSON.parse(ran.content) as typeof payload;
+  } catch {
+    return `Could not check a refund for ${who}.`;
+  }
+  if (!payload.ok || !payload.result?.reason) {
+    return `Could not check a refund for ${who}.`;
+  }
+  return `${who}, ${line}. ${payload.result.reason}`;
+}
+
+function hideInternalIds(text: string): string {
+  let next = text;
+  for (const account of seedAccounts) {
+    next = next.split(account.id).join(account.accountNumber);
+    for (const charge of account.charges) {
+      next = next
+        .split(charge.chargeId)
+        .join(`${formatGbp(charge.amount)} on ${formatChargeDate(charge.date)}`);
+    }
+  }
+  return next
+    .replace(/\bch_[a-z0-9_]+\b/gi, "that charge")
+    .replace(/\bacct-[a-z0-9-]+\b/gi, "that account")
+    .replace(/\bin_[a-z0-9_]+\b/gi, "that invoice");
 }
 
 async function completePolicySearchTurn(
