@@ -214,9 +214,84 @@ export type ChatCompletionClient = {
   fetch: typeof fetch;
 };
 
+function isAffirmativeRefundReply(message: string): boolean {
+  return /^(yeah|yes|yep|yup|sure|ok|okay|please|go ahead|do it)\.?!?$/i.test(message.trim());
+}
+
+function assistantOfferedRefundCheck(text: string): boolean {
+  return (
+    /\bshould i check\b/i.test(text) ||
+    /\bwould you like me to check\b/i.test(text) ||
+    (/\bcheck\b/i.test(text) && /\b(refund|refundable)\b/i.test(text))
+  );
+}
+
+function asksCustomerRefundEligibility(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (!/\b(refund|refundable|eligible|eligibility|allowed)\b/.test(lower)) return false;
+  if (/\b(refund window|refund policy|refund rule)\b/.test(lower)) return false;
+  if (
+    /\b(monthly|annual)\b/.test(lower) &&
+    /\b(accounts?|plans?|customers?)\b/.test(lower) &&
+    /\b(window|days?|policy|rule)\b/.test(lower)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function accountIdFromThread(text: string, history: readonly ChatTurn[]): string | null {
+  const direct = accountIdFromOperatorMessage(text);
+  if (direct) return direct;
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const turn = history[index];
+    if (!turn) continue;
+    const id = accountIdFromOperatorMessage(turn.content);
+    if (id) return id;
+  }
+
+  if (/\b(he|him|his|she|her|they|them)\b/i.test(text)) {
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const turn = history[index];
+      if (!turn) continue;
+      const id = accountIdFromOperatorMessage(turn.content);
+      if (id) return id;
+    }
+  }
+
+  return null;
+}
+
+function chargeIdFromThread(
+  text: string,
+  history: readonly ChatTurn[],
+  account: Account,
+): string | null {
+  const chargeFromText = text.match(/\bch_[a-z0-9_]+\b/i)?.[0];
+  if (chargeFromText) return chargeFromText;
+
+  const fromMessage = chargeIdFromOperatorMessage(text, account);
+  if (fromMessage) return fromMessage;
+
+  const sources = [...history.map((turn) => turn.content), text];
+  for (let index = sources.length - 1; index >= 0; index -= 1) {
+    const content = sources[index];
+    if (!content) continue;
+    const fromTurn = chargeIdFromOperatorMessage(content, account);
+    if (fromTurn) return fromTurn;
+  }
+
+  const succeeded = account.charges.filter((charge) => charge.status === "succeeded");
+  if (succeeded.length === 1) return succeeded[0]?.chargeId ?? null;
+
+  return null;
+}
+
 /** When the operator asks for a refund preview, run preview_refund on the server before the model reply. */
 export function previewRefundIntent(
   message: string,
+  history: readonly ChatTurn[] = [],
 ): { account_id: string; charge_id: string } | null {
   const text = message.trim();
   if (!text) return null;
@@ -227,9 +302,16 @@ export function previewRefundIntent(
     /\bpreview\b/.test(lower) ||
     /\brefund\b/.test(lower) ||
     /\brefundable\b/.test(lower) ||
+    /\b(eligible|eligibility)\b/.test(lower) ||
     (/\ballowed\b/.test(lower) && /\brefund\b/.test(lower));
 
-  if (!wantsPreview) return null;
+  const lastAssistant = [...history].reverse().find((turn) => turn.role === "assistant");
+  const affirmativeCheck =
+    isAffirmativeRefundReply(text) &&
+    lastAssistant !== undefined &&
+    assistantOfferedRefundCheck(lastAssistant.content);
+
+  if (!wantsPreview && !affirmativeCheck) return null;
 
   const chargeFromText = text.match(/\bch_[a-z0-9_]+\b/i)?.[0];
   const accountFromText = text.match(/\bacct-[a-z0-9-]+\b/i)?.[0];
@@ -237,13 +319,17 @@ export function previewRefundIntent(
     return { account_id: accountFromText, charge_id: chargeFromText };
   }
 
-  const accountId = accountIdFromOperatorMessage(text);
+  if (wantsPreview && !affirmativeCheck && asksAboutStoredRules(text) && !asksCustomerRefundEligibility(text)) {
+    return null;
+  }
+
+  const accountId = accountIdFromThread(text, history);
   if (!accountId) return null;
 
   const seed = seedAccounts.find((account) => account.id === accountId);
   if (!seed) return null;
 
-  const chargeId = chargeFromText ?? chargeIdFromOperatorMessage(text, seed);
+  const chargeId = chargeIdFromThread(text, history, seed);
   if (!chargeId) return null;
 
   return { account_id: accountId, charge_id: chargeId };
@@ -333,7 +419,9 @@ function clarifiesPolicy(text: string): boolean {
   const lower = text.toLowerCase();
   if (text.length > 160) return false;
   return (
-    /^(no|not|i mean|in terms|instead|what about)\b/.test(lower) ||
+    /^(no|not|ok|okay|i mean|in terms|instead|what about)\b/.test(lower) ||
+    /\bfor annual\b/.test(lower) ||
+    /\bfor monthly\b/.test(lower) ||
     /\bdays?\b/.test(lower) ||
     /\beligib/.test(lower) ||
     /\bwindow\b/.test(lower) ||
@@ -342,14 +430,20 @@ function clarifiesPolicy(text: string): boolean {
   );
 }
 
+function isCustomerSpecificPolicyTurn(text: string, history: readonly ChatTurn[]): boolean {
+  if (!asksCustomerRefundEligibility(text)) return false;
+  return accountIdFromThread(text, history) !== null;
+}
+
 /** When the operator asks about stored policy and is not previewing a charge, search before the reply. A short correction uses the earlier policy question plus this message. */
 export function policySearchIntent(
   message: string,
   history: readonly ChatTurn[] = [],
 ): { query: string } | null {
-  if (previewRefundIntent(message)) return null;
+  if (previewRefundIntent(message, history)) return null;
   const text = message.trim();
   if (!text) return null;
+  if (isCustomerSpecificPolicyTurn(text, history)) return null;
   if (isStoredPolicyQuestion(text)) return { query: text.slice(0, 500) };
 
   if (!clarifiesPolicy(text)) return null;
@@ -357,15 +451,20 @@ export function policySearchIntent(
     const turn = history[index];
     if (turn?.role !== "user") continue;
     const earlier = turn.content.trim();
-    if (!earlier || previewRefundIntent(earlier) || !isStoredPolicyQuestion(earlier)) continue;
+    if (!earlier || previewRefundIntent(earlier, history.slice(0, index)) || !isStoredPolicyQuestion(earlier)) {
+      continue;
+    }
     return { query: `${earlier} ${text}`.slice(0, 500) };
   }
   return null;
 }
 
 /** When the operator asks for the charges on a known account, list them before the model can invent a miss. */
-export function listChargesIntent(message: string): { account_id: string } | null {
-  if (previewRefundIntent(message) || policySearchIntent(message)) return null;
+export function listChargesIntent(
+  message: string,
+  history: readonly ChatTurn[] = [],
+): { account_id: string } | null {
+  if (previewRefundIntent(message, history) || policySearchIntent(message, history)) return null;
   const text = message.trim();
   if (!text || !/\bcharges\b/i.test(text)) return null;
   const accountId = accountIdFromOperatorMessage(text);
@@ -384,7 +483,7 @@ export async function completeChatTurn(
     return { ok: false, error: PUBLIC_ERROR, status: 500, reason: "not_configured" };
   }
 
-  const forcedPreview = previewRefundIntent(message);
+  const forcedPreview = previewRefundIntent(message, history);
   if (forcedPreview) {
     return completePreviewRefundTurn(message, history, forcedPreview, client, apiKey, runTool);
   }
@@ -394,7 +493,7 @@ export async function completeChatTurn(
     return completePolicySearchTurn(message, history, forcedPolicy, client, apiKey, runTool);
   }
 
-  const forcedCharges = listChargesIntent(message);
+  const forcedCharges = listChargesIntent(message, history);
   if (forcedCharges) {
     return completeListChargesTurn(forcedCharges, runTool);
   }

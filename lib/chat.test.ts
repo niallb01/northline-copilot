@@ -795,6 +795,16 @@ describe("policySearchIntent", () => {
     assert.ok(policySearchIntent("what does the cheapest plan include?"));
   });
 
+  it("routes ok for annual after a monthly window question", () => {
+    assert.deepEqual(
+      policySearchIntent("ok for annual?", [
+        { role: "user", content: "how days is the refund window for monthly accounts" },
+        { role: "assistant", content: "Within 14 days for monthly." },
+      ]),
+      { query: "how days is the refund window for monthly accounts ok for annual?" },
+    );
+  });
+
   it("treats a short correction as the same policy question", () => {
     assert.deepEqual(
       policySearchIntent("no in terms of days", [
@@ -817,6 +827,24 @@ describe("listChargesIntent", () => {
     assert.equal(listChargesIntent("Can I refund Tom Ellis's September charge?"), null);
   });
 });
+
+const tomThread = [
+  { role: "user" as const, content: "what plan is tom ellis on" },
+  {
+    role: "assistant" as const,
+    content: "Tom Ellis is on a monthly plan with NL-1048292.",
+  },
+];
+
+const tomOfferThread = [
+  ...tomThread,
+  { role: "user" as const, content: "is he eligable for a refund" },
+  {
+    role: "assistant" as const,
+    content:
+      "Tom Ellis is on the monthly plan with NL-1048292 and was charged £49.00 on 11 September 2026. Should I check if this charge would be refundable?",
+  },
+];
 
 describe("previewRefundIntent", () => {
   it("detects preview prompts that name both ids", () => {
@@ -848,6 +876,14 @@ describe("previewRefundIntent", () => {
       charge_id: "ch_monthly_1",
     });
     assert.deepEqual(previewRefundIntent("Can we refund the September charge for NL-1048292?"), {
+      account_id: "acct-monthly-late",
+      charge_id: "ch_monthly_1",
+    });
+    assert.deepEqual(previewRefundIntent("is he eligible for a refund", tomThread), {
+      account_id: "acct-monthly-late",
+      charge_id: "ch_monthly_1",
+    });
+    assert.deepEqual(previewRefundIntent("yeah", tomOfferThread), {
       account_id: "acct-monthly-late",
       charge_id: "ch_monthly_1",
     });

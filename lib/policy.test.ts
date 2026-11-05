@@ -45,6 +45,7 @@ describe("prefersRefundWindows", () => {
     assert.equal(prefersRefundWindows("What is the annual plan refund window?"), true);
     assert.equal(prefersRefundWindows("What is the crypto refund rule?"), false);
     assert.equal(prefersRefundWindows("how approved refund money is returned"), false);
+    assert.equal(prefersRefundWindows("is he eligible for a refund"), false);
   });
 });
 

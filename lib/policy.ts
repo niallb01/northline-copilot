@@ -134,6 +134,12 @@ export async function embedPolicyChunks(): Promise<number> {
  */
 export function prefersRefundWindows(query: string): boolean {
   const lower = query.toLowerCase();
+  if (
+    /\b(eligible|eligibility)\b/.test(lower) &&
+    !/\b(window|days?|policy|rule)\b/.test(lower)
+  ) {
+    return false;
+  }
   const aboutRefund = /\brefunds?\b/.test(lower);
   const aboutWindow =
     (/\b(annual|monthly)\b/.test(lower) && /\b(refund|window)\b/.test(lower)) ||
@@ -159,6 +165,8 @@ function refundWindowKeys(query: string): PolicyChunkKey[] {
   const lower = query.toLowerCase();
   const annual = chunk("refunds", "refunds-annual-plans");
   const monthly = chunk("refunds", "refunds-monthly-plans");
+  if (/\bfor annual\b/.test(lower) || /\bok for annual\b/.test(lower)) return [annual];
+  if (/\bfor monthly\b/.test(lower) || /\bmonthly accounts?\b/.test(lower)) return [monthly];
   if (/\bannual\b/.test(lower) && !/\bmonthly\b/.test(lower)) return [annual, monthly];
   return [monthly, annual];
 }
