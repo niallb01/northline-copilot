@@ -31,7 +31,13 @@ export default async function LoginPage({
   const errorMessage = signedIn ? null : loginErrorMessage(errorCode);
 
   return (
-    <MarketingShell>
+    <MarketingShell
+      headerAction={
+        <Link className={shell.headerLink} href="/">
+          Home
+        </Link>
+      }
+    >
       <MarketingCard
         title={signedIn ? "You are signed in" : "Sign in to the demo"}
         subtitle={

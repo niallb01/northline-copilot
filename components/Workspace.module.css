@@ -6,15 +6,9 @@
 }
 
 .header {
-  padding: 1rem 1.25rem;
+  padding: 0.85rem 1.25rem;
   background: #111827;
   color: #f9fafb;
-}
-
-.heading {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
 }
 
 .columns {

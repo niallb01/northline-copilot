@@ -20,6 +20,7 @@ import { ConfirmRefund } from "./ConfirmRefund";
 import { PendingQueue } from "./PendingQueue";
 import { PolicyCitations } from "./PolicyCitations";
 import { TryThisJourney } from "./TryThisJourney";
+import { BrandLink } from "./BrandLink";
 import styles from "./Workspace.module.css";
 
 export function Workspace() {
@@ -30,7 +31,7 @@ export function Workspace() {
   return (
     <div className={styles.workspace}>
       <header className={styles.header}>
-        <h1 className={styles.heading}>Northline Copilot</h1>
+        <BrandLink theme="dark" />
       </header>
       <div className={styles.columns}>
         <div className={styles.chat}>

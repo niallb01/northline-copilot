@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Logo } from "./Logo";
+import { BrandLink } from "./BrandLink";
 import styles from "./MarketingShell.module.css";
 
 export function MarketingShell({
@@ -25,12 +25,7 @@ export function MarketingShell({
     <div className={pageClass}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <Link className={styles.brand} href="/">
-            <Logo className={styles.mark} />
-            <span className={styles.wordmark}>
-              Northline <span className={styles.wordmarkMuted}>Copilot</span>
-            </span>
-          </Link>
+          <BrandLink theme="light" />
           {headerAction ? <div className={styles.headerAction}>{headerAction}</div> : null}
         </div>
       </header>
