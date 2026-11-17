@@ -6,20 +6,66 @@
 }
 
 .header {
-  padding: 1rem 1.25rem;
-  background: #111827;
-  color: #f9fafb;
+  padding: 0.85rem 1.5rem;
+  background: #ffffff;
+  color: #111827;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.headerInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
   color: inherit;
-  font-size: 1.125rem;
+  text-decoration: none;
+}
+
+.brand:hover .wordmark {
+  color: #1f2937;
+}
+
+.mark {
+  display: block;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.wordmark {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.wordmarkMuted {
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.headerAction {
+  display: flex;
+  align-items: center;
+}
+
+.headerLink {
+  color: #111827;
+  font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
 }
 
-.brand:hover {
-  color: #e5e7eb;
+.headerLink:hover {
+  color: #4338ca;
 }
 
 .main {
@@ -28,6 +74,21 @@
   align-items: center;
   justify-content: center;
   padding: 2rem 1.25rem 3rem;
+}
+
+.pageHome {
+  background: #f8fafc;
+}
+
+.mainHome {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 3.25rem 1.5rem 4.5rem;
 }
 
 .card {
@@ -75,6 +136,29 @@
 
 .primaryButton:hover {
   background: #1f2937;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.secondaryButton:hover {
+  border-color: #9ca3af;
+  background: #f9fafb;
 }
 
 .primaryButton:focus-visible {

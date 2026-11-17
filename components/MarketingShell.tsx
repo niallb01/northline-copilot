@@ -6,17 +6,35 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Logo } from "./Logo";
 import styles from "./MarketingShell.module.css";
 
-export function MarketingShell({ children }: { children: ReactNode }) {
+export function MarketingShell({
+  children,
+  variant = "centered",
+  headerAction,
+}: {
+  children: ReactNode;
+  variant?: "centered" | "home";
+  headerAction?: ReactNode;
+}) {
+  const pageClass = variant === "home" ? `${styles.page} ${styles.pageHome}` : styles.page;
+  const mainClass = variant === "home" ? `${styles.main} ${styles.mainHome}` : styles.main;
+
   return (
-    <div className={styles.page}>
+    <div className={pageClass}>
       <header className={styles.header}>
-        <Link className={styles.brand} href="/">
-          Northline Copilot
-        </Link>
+        <div className={styles.headerInner}>
+          <Link className={styles.brand} href="/">
+            <Logo className={styles.mark} />
+            <span className={styles.wordmark}>
+              Northline <span className={styles.wordmarkMuted}>Copilot</span>
+            </span>
+          </Link>
+          {headerAction ? <div className={styles.headerAction}>{headerAction}</div> : null}
+        </div>
       </header>
-      <div className={styles.main}>{children}</div>
+      <div className={mainClass}>{children}</div>
     </div>
   );
 }
