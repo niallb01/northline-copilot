@@ -17,6 +17,7 @@ export function LoginForm() {
         id="password"
         name="password"
         type="password"
+        placeholder="northline-demo"
         autoComplete="current-password"
         required
       />
